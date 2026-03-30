@@ -29,7 +29,7 @@ def fetch_page(url: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
         try:
             start = time.monotonic()
             resp = SESSION.get(url, timeout=timeout, allow_redirects=True)
-                elapsed = int((time.monotonic() - start) * 1000)
+            elapsed = int((time.monotonic() - start) * 1000)
 
             result["final_url"] = resp.url
             result["status_code"] = resp.status_code
