@@ -156,9 +156,23 @@ class InputTab(QWidget):
         buttons.addStretch()
         form.addRow("", buttons)
 
+        # Custom URL patterns
+        self.custom_patterns_input = QLineEdit()
+        self.custom_patterns_input.setPlaceholderText(
+            "e.g. /oglas/, /listing/, /item/   (comma-separated, leave empty for defaults)"
+        )
+        self.custom_patterns_input.setToolTip(
+            "Override built-in product URL patterns with your own.\n"
+            "Comma-separated substrings. A URL is kept if it contains any of them.\n"
+            "Example for OLX: /oglas/\n"
+            "Leave empty to use the built-in heuristics."
+        )
+        form.addRow("URL patterns:", self.custom_patterns_input)
+
         # Status label
         self.sitemap_status_label = QLabel("")
         self.sitemap_status_label.setStyleSheet("color: #666;")
+        self.sitemap_status_label.setWordWrap(True)
         form.addRow("Status:", self.sitemap_status_label)
 
         layout.addWidget(group)
@@ -539,6 +553,7 @@ class InputTab(QWidget):
         colors = {
             "info":    "#1976d2",
             "success": "#388e3c",
+            "warning": "#D9A441",
             "error":   "#d32f2f",
         }
         self.sitemap_status_label.setText(text)
@@ -552,21 +567,63 @@ class InputTab(QWidget):
         
         if not sitemap_url:
             self.sitemap_status_label.setText("Enter sitemap URL first")
-            self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
+            self.sitemap_status_label.setStyleSheet("color: #C96A5A;")
             return
 
         if not self._is_valid_url(sitemap_url):
             self.sitemap_status_label.setText("URL must start with http:// or https://")
-            self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
+            self.sitemap_status_label.setStyleSheet("color: #C96A5A;")
             return
 
+        # Loading state
         self.sitemap_status_label.setText("Loading sitemap...")
-        self.sitemap_status_label.setStyleSheet("color: #1976d2;")
+        self.sitemap_status_label.setStyleSheet("color: #8A94A6;")
+        self.load_sitemap_btn.setEnabled(False)
 
-        # TODO: Call backend sitemap load through controller
-        # For now, just update status
-        self.sitemap_status_label.setText("Load sitemap not implemented yet")
-        self.sitemap_status_label.setStyleSheet("color: #666;")
+        # Connect signals to handler methods (if not already connected)
+        try:
+            self.audit_controller.sitemap_loaded.disconnect(self._on_sitemap_loaded)
+            self.audit_controller.sitemap_load_failed.disconnect(self._on_sitemap_load_failed)
+        except TypeError:
+            pass  # Signals not connected yet
+
+        self.audit_controller.sitemap_loaded.connect(self._on_sitemap_loaded)
+        self.audit_controller.sitemap_load_failed.connect(self._on_sitemap_load_failed)
+
+        # Parse custom patterns field (comma-separated, strip whitespace)
+        raw_patterns = self.custom_patterns_input.text().strip()
+        custom_patterns = (
+            [p.strip() for p in raw_patterns.split(",") if p.strip()]
+            if raw_patterns else None
+        )
+
+        # Start loading
+        self.audit_controller.load_sitemap(sitemap_url, custom_patterns=custom_patterns)
+
+    def _on_sitemap_loaded(self, urls: list, used_fallback: bool):
+        """Handle successful sitemap load."""
+        self.load_sitemap_btn.setEnabled(True)
+
+        self._collected_urls = urls
+        total = len(urls)
+
+        if used_fallback:
+            self._set_sitemap_status(
+                f"Upozorenje: nema poklapanja sa URL patternima — prikazujem svih {total} URL-ova. "
+                "Dodaj vlastite patterne u polje ispod.",
+                "warning",
+            )
+        else:
+            self._set_sitemap_status(f"Učitano {total} URL-ova.", "success")
+
+        self._update_url_summary()
+        self._validate_and_update()  # ← aktivira Start Scan dugme
+
+    def _on_sitemap_load_failed(self, error: str):
+        """Handle sitemap load failure."""
+        self.load_sitemap_btn.setEnabled(True)
+        self.sitemap_status_label.setText(error)
+        self.sitemap_status_label.setStyleSheet("color: #C96A5A;")
 
     def _on_browse_clicked(self):
         """Handle browse button click."""
@@ -593,6 +650,7 @@ class InputTab(QWidget):
                 self._collected_urls = urls
 
             self._update_url_summary()
+            self._validate_and_update()  # aktivira Start Scan dugme
         except Exception as e:
             self.sitemap_status_label.setText(f"Error loading file: {str(e)}")
             self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
@@ -708,15 +766,16 @@ class InputTab(QWidget):
     def _update_url_summary(self):
         """Update URL summary display."""
         # Get URLs from various sources
-        urls = []
+        urls = list(self._collected_urls) if self._collected_urls else []
 
         # From manual input
         manual = self.manual_urls_edit.toPlainText().strip()
         if manual:
-            urls.extend([u.strip() for u in manual.split('\n') if u.strip()])
-
-        # From file (if already loaded)
-        # Note: This is simplified - in real implementation, we'd track file URLs separately
+            manual_urls = [u.strip() for u in manual.split('\n') if u.strip()]
+            # If we have collected URLs from sitemap, don't append manual
+            # If no sitemap URLs, append manual URLs
+            if not urls:
+                urls = manual_urls
 
         # Total
         total = len(urls)

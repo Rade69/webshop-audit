@@ -10,7 +10,48 @@ from typing import Optional
 from PyQt6.QtCore import QObject, QThread, pyqtSignal as Signal
 
 from audit.pipeline import run_audit
-from audit.sitemap import discover_sitemap_urls, fetch_sitemap
+from audit.sitemap import discover_sitemap_urls, fetch_sitemap, collect_urls_from_sitemap, filter_product_like_urls
+
+
+class SitemapLoadWorker(QThread):
+    """
+    QThread worker za učitavanje sitemap-a.
+
+    Fetchuje sitemap, kolektuje URL-ove i filtrira product-like.
+    Ako su proslijeđeni custom_patterns, koristi njih umjesto defaultnih.
+    """
+
+    sitemap_loaded = Signal(list, bool)   # (filtered_urls, used_fallback)
+    sitemap_load_failed = Signal(str)     # error message
+
+    def __init__(self, sitemap_url: str, custom_patterns: list[str] | None = None) -> None:
+        super().__init__()
+        self.sitemap_url = sitemap_url
+        self.custom_patterns = custom_patterns  # None = koristi defaultne iz config.py
+
+    def run(self) -> None:
+        try:
+            urls = collect_urls_from_sitemap(self.sitemap_url)
+
+            if not urls:
+                self.sitemap_load_failed.emit("No URLs found in sitemap.")
+                return
+
+            if self.custom_patterns:
+                # Filtriraj prema korisničkim patternima
+                filtered = [
+                    u for u in urls
+                    if any(p in u for p in self.custom_patterns)
+                ]
+                used_fallback = len(filtered) == 0
+                self.sitemap_loaded.emit(filtered if not used_fallback else urls, used_fallback)
+            else:
+                # Defaultni heuristički filter
+                filtered_urls, used_fallback = filter_product_like_urls(urls)
+                self.sitemap_loaded.emit(filtered_urls, used_fallback)
+
+        except Exception as e:
+            self.sitemap_load_failed.emit(f"Error loading sitemap: {e}")
 
 
 class SitemapDiscoverWorker(QThread):
@@ -205,10 +246,15 @@ class AuditRunController(QObject):
     sitemap_discovered = Signal(str)   # pronađeni sitemap URL
     sitemap_discover_failed = Signal(str)  # poruka greške
 
+    # Sitemap load signali
+    sitemap_loaded = Signal(list, bool)   # (filtered_urls, used_fallback)
+    sitemap_load_failed = Signal(str)    # error message
+
     def __init__(self):
         super().__init__()
         self._worker: Optional[AuditWorker] = None
         self._discover_worker: Optional[SitemapDiscoverWorker] = None
+        self._load_worker: Optional[SitemapLoadWorker] = None
         self._run_config: Optional[dict] = None
 
         from gui.viewmodels.run_state import RunState
@@ -282,6 +328,38 @@ class AuditRunController(QObject):
         if self._discover_worker:
             self._discover_worker.deleteLater()
             self._discover_worker = None
+
+    def load_sitemap(self, sitemap_url: str, custom_patterns: list[str] | None = None) -> None:
+        """
+        Ucitava sitemap iz zadanog URL-a u pozadini.
+
+        Args:
+            sitemap_url: URL sitemap-a za ucitavanje.
+            custom_patterns: Opcijski lista URL pod-stringova za filtriranje
+                (npr. ['/oglas/', '/listing/']). None = defaultni heuristicki filter.
+        Ignorira poziv ako je load vec u toku.
+        """
+        if self._load_worker and self._load_worker.isRunning():
+            return
+
+        self._load_worker = SitemapLoadWorker(sitemap_url, custom_patterns=custom_patterns)
+        self._load_worker.sitemap_loaded.connect(self._on_sitemap_loaded)
+        self._load_worker.sitemap_load_failed.connect(self._on_sitemap_load_failed)
+        self._load_worker.start()
+
+    def _on_sitemap_loaded(self, urls: list, used_fallback: bool) -> None:
+        """Handluje uspješno učitavanje sitemap-a."""
+        self.sitemap_loaded.emit(urls, used_fallback)
+        if self._load_worker:
+            self._load_worker.deleteLater()
+            self._load_worker = None
+
+    def _on_sitemap_load_failed(self, message: str) -> None:
+        """Handluje grešku pri učitavanju sitemap-a."""
+        self.sitemap_load_failed.emit(message)
+        if self._load_worker:
+            self._load_worker.deleteLater()
+            self._load_worker = None
 
     def stop_run(self):
         """Zahtijeva zaustavljanje trenutnog run-a."""
