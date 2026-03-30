@@ -5,12 +5,43 @@ Odgovornost: Upravljanje AuditWorker-om i komunikacija sa UI-om.
 Ova klasa je jedini posrednik između backend pipeline-a i GUI-a.
 """
 import time
-from datetime import datetime
 from typing import Optional
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal as Signal
 
-from audit.pipeline import run_audit  # Import backend pipeline-a
+from audit.pipeline import run_audit
+from audit.sitemap import discover_sitemap_urls, fetch_sitemap
+
+
+class SitemapDiscoverWorker(QThread):
+    """
+    QThread worker za autodiscover sitemap-a.
+
+    Prolazi kroz listu kandidata i vraća prvi koji odgovori
+    validnim XML-om. Blokira — mora se pokrenuti u zasebnoj niti.
+    """
+
+    discovered = Signal(str)   # pronađeni sitemap URL
+    failed = Signal(str)       # poruka greške
+
+    def __init__(self, domain: str) -> None:
+        super().__init__()
+        self.domain = domain
+
+    def run(self) -> None:
+        try:
+            candidates = discover_sitemap_urls(self.domain)
+            for url in candidates:
+                xml = fetch_sitemap(url)
+                if xml:
+                    self.discovered.emit(url)
+                    return
+            self.failed.emit(
+                f"Sitemap nije pronađen za '{self.domain}'. "
+                "Provjerite domain ili unesite URL ručno."
+            )
+        except Exception as e:
+            self.failed.emit(f"Greška pri autodiscoveru: {e}")
 
 
 class AuditWorker(QThread):
@@ -170,10 +201,23 @@ class AuditRunController(QObject):
     log_message = Signal(str, str)
     stats_updated = Signal(dict)
 
+    # Sitemap autodiscover signali
+    sitemap_discovered = Signal(str)   # pronađeni sitemap URL
+    sitemap_discover_failed = Signal(str)  # poruka greške
+
     def __init__(self):
         super().__init__()
         self._worker: Optional[AuditWorker] = None
+        self._discover_worker: Optional[SitemapDiscoverWorker] = None
         self._run_config: Optional[dict] = None
+
+        from gui.viewmodels.run_state import RunState
+        self._state = RunState()
+
+    @property
+    def state(self) -> "RunState":
+        """Persistentni RunState koji se ažurira kroz signale."""
+        return self._state
 
     @property
     def is_running(self) -> bool:
@@ -206,8 +250,38 @@ class AuditRunController(QObject):
         self._worker.run_completed.connect(self._on_worker_completed)
         self._worker.run_failed.connect(self._on_worker_failed)
 
+        self._state.reset()
+        self._state.status = "running"
         self.run_started.emit()
         self._worker.start()
+
+    def discover_sitemap(self, domain: str) -> None:
+        """
+        Pokreće autodiscover sitemap-a za zadani domain u pozadini.
+
+        Emituje sitemap_discovered(url) ako pronađe validan sitemap,
+        ili sitemap_discover_failed(message) ako ništa ne pronađe.
+        Ignorira poziv ako je discover već u toku.
+        """
+        if self._discover_worker and self._discover_worker.isRunning():
+            return
+
+        self._discover_worker = SitemapDiscoverWorker(domain)
+        self._discover_worker.discovered.connect(self._on_sitemap_discovered)
+        self._discover_worker.failed.connect(self._on_sitemap_discover_failed)
+        self._discover_worker.start()
+
+    def _on_sitemap_discovered(self, url: str) -> None:
+        self.sitemap_discovered.emit(url)
+        if self._discover_worker:
+            self._discover_worker.deleteLater()
+            self._discover_worker = None
+
+    def _on_sitemap_discover_failed(self, message: str) -> None:
+        self.sitemap_discover_failed.emit(message)
+        if self._discover_worker:
+            self._discover_worker.deleteLater()
+            self._discover_worker = None
 
     def stop_run(self):
         """Zahtijeva zaustavljanje trenutnog run-a."""
@@ -238,16 +312,17 @@ class AuditRunController(QObject):
 
     def _on_worker_completed(self, output_dir: str):
         """Handluje završetak worker-a."""
+        self._state.status = "completed"
+        self._state.output_dir = output_dir
         self.run_completed.emit(output_dir)
-        # Čišćenje
         if self._worker:
             self._worker.deleteLater()
             self._worker = None
 
     def _on_worker_failed(self, error: str):
         """Handluje grešku worker-a."""
+        self._state.status = "failed"
         self.run_failed.emit(error)
-        # Čišćenje
         if self._worker:
             self._worker.deleteLater()
             self._worker = None

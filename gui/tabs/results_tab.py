@@ -4,9 +4,13 @@ Results tab for displaying audit results.
 Responsibility: Working screen for viewing, filtering, and analyzing
 audit results. Shows table with scores, details panel, and actions.
 """
+import csv
+
 from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSlot, QSortFilterProxyModel, QUrl
 from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
+    QFileDialog,
+    QMessageBox,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -359,6 +363,8 @@ class ResultsTab(QWidget):
 
     def _create_table_view(self) -> QWidget:
         """Create table view widget."""
+        from gui.widgets.delegates import ScoreDelegate, FlagDelegate
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -377,6 +383,20 @@ class ResultsTab(QWidget):
         self.filter_model = ResultsFilterModel()
         self.filter_model.setSourceModel(self.table_model)
         self.table_view.setModel(self.filter_model)
+
+        # Set delegates for score columns (1-4: catalog, machine, commerce, overall)
+        self.score_delegate = ScoreDelegate(self.table_view)
+        for col in range(1, 5):
+            self.table_view.setItemDelegateForColumn(col, self.score_delegate)
+
+        # Set delegate for flags column (5: flags)
+        self.flag_delegate = FlagDelegate(self.table_view)
+        self.table_view.setItemDelegateForColumn(5, self.flag_delegate)
+
+        # Additional table styling
+        self.table_view.setAlternatingRowColors(True)
+        self.table_view.verticalHeader().setDefaultSectionSize(32)
+        self.table_view.verticalHeader().setVisible(False)
 
         layout.addWidget(self.table_view)
 
@@ -535,6 +555,9 @@ class ResultsTab(QWidget):
         self.table_model.update_data(df.to_dict('records'))
         self._update_count(len(df))
 
+        # Enable export as soon as data is loaded (selection not required)
+        self.export_btn.setEnabled(True)
+
         # Update category dropdown
         categories = self.results_controller.get_categories()
         self.category_combo.clear()
@@ -645,6 +668,37 @@ class ResultsTab(QWidget):
             self.mark_for_review_requested.emit(self._current_url)
 
     def _on_export(self):
-        """Export selected products."""
-        # TODO: Implement export dialog
-        pass
+        """Export currently visible (filtered) rows to CSV."""
+        row_count = self.filter_model.rowCount()
+        if not row_count:
+            QMessageBox.information(self, "Export", "No rows to export.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Filtered Results",
+            "results_filtered.csv",
+            "CSV Files (*.csv);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        # Collect all rows visible after both controller-level and UI-level filtering
+        rows = []
+        for proxy_row in range(row_count):
+            source_row = self.filter_model.mapToSource(
+                self.filter_model.index(proxy_row, 0)
+            ).row()
+            rows.append(self.table_model.get_product(source_row))
+
+        try:
+            with open(file_path, "w", newline="", encoding="utf-8") as f:
+                if rows:
+                    writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+                    writer.writeheader()
+                    writer.writerows(rows)
+            QMessageBox.information(
+                self, "Export", f"Exported {len(rows)} rows to:\n{file_path}"
+            )
+        except OSError as e:
+            QMessageBox.critical(self, "Export Error", str(e))

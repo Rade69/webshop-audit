@@ -8,6 +8,21 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_MAX_URLS = None
 DEFAULT_OUTPUT_DIR = "outputs"
 
+# Concurrent fetching
+DEFAULT_MAX_WORKERS = 8  # threads for parallel HTTP requests
+
+# Playwright (JS rendering)
+DEFAULT_USE_PLAYWRIGHT = False
+
+# Score weights (must sum to 1.0; scorer normalises automatically)
+DEFAULT_CATALOG_WEIGHT = 0.30
+DEFAULT_MACHINE_WEIGHT = 0.35
+DEFAULT_COMMERCE_WEIGHT = 0.35
+DEFAULT_AGENT_READY_THRESHOLD = 65  # overall_score >= this for agent_ready=True
+
+# Checkpoint / resume
+CHECKPOINT_FILENAME = "fetch_checkpoint.json"
+
 # Heuristic thresholds
 MIN_VISIBLE_TEXT_LENGTH = 200
 MIN_IMAGE_COUNT = 2

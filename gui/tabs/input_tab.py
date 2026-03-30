@@ -21,10 +21,21 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QCheckBox,
     QSpinBox,
+    QDoubleSpinBox,
     QTabWidget,
     QSplitter,
+    QScrollArea,
+    QFrame,
 )
 from PyQt6.QtGui import QIntValidator
+
+from config import (
+    DEFAULT_MAX_WORKERS,
+    DEFAULT_CATALOG_WEIGHT,
+    DEFAULT_MACHINE_WEIGHT,
+    DEFAULT_COMMERCE_WEIGHT,
+    DEFAULT_AGENT_READY_THRESHOLD,
+)
 
 from gui.controllers.audit_run_controller import AuditRunController
 
@@ -67,35 +78,54 @@ class InputTab(QWidget):
 
     def _setup_ui(self):
         """Set up the UI components."""
-        layout = QVBoxLayout(self)
+        # Outer layout: scroll area + pinned action bar
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # --- Scrollable content ---
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
 
         # Create tab widget for input methods
         self.input_tabs = QTabWidget()
 
-        # Sitemap input tab
         sitemap_widget = self._create_sitemap_input()
         self.input_tabs.addTab(sitemap_widget, "Sitemap")
 
-        # URL list input tab
         url_list_widget = self._create_url_list_input()
         self.input_tabs.addTab(url_list_widget, "URL List")
 
         layout.addWidget(self.input_tabs)
 
-        # Run options group
         run_options = self._create_run_options()
         layout.addWidget(run_options)
 
-        # URL Summary group
+        advanced = self._create_advanced_settings()
+        layout.addWidget(advanced)
+
         self.url_summary = self._create_url_summary()
         layout.addWidget(self.url_summary)
 
-        # Action buttons
-        actions = self._create_actions()
-        layout.addWidget(actions)
-
         layout.addStretch()
+
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+
+        # --- Pinned action bar (always visible) ---
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        outer.addWidget(separator)
+
+        actions = self._create_actions()
+        outer.addWidget(actions)
 
     def _create_sitemap_input(self) -> QWidget:
         """Create sitemap/domain input widget."""
@@ -189,6 +219,28 @@ class InputTab(QWidget):
         delay_layout.addStretch()
         form.addRow("Delay:", delay_layout)
 
+        # Parallel workers
+        workers_layout = QHBoxLayout()
+        self.max_workers_spin = QSpinBox()
+        self.max_workers_spin.setRange(1, 32)
+        self.max_workers_spin.setValue(DEFAULT_MAX_WORKERS)
+        self.max_workers_spin.setToolTip(
+            "Number of parallel HTTP threads. Higher = faster but more load on the server."
+        )
+        workers_layout.addWidget(self.max_workers_spin)
+        workers_layout.addStretch()
+        form.addRow("Workers:", workers_layout)
+
+        # Playwright
+        self.use_playwright_cb = QCheckBox("Use Playwright (JS-rendered pages)")
+        self.use_playwright_cb.setToolTip(
+            "Render pages with a headless browser so JavaScript content is visible.\n"
+            "Requires: pip install playwright && playwright install chromium\n"
+            "Forces single-threaded mode (workers setting is ignored)."
+        )
+        self.use_playwright_cb.stateChanged.connect(self._on_playwright_toggled)
+        form.addRow("", self.use_playwright_cb)
+
         # Output directory
         output_row = QHBoxLayout()
         self.output_dir_input = QLineEdit()
@@ -202,6 +254,75 @@ class InputTab(QWidget):
         self.run_options_error = QLabel("")
         self.run_options_error.setStyleSheet("color: #d32f2f;")
         form.addRow("", self.run_options_error)
+
+        return group
+
+    def _create_advanced_settings(self) -> QGroupBox:
+        """Create collapsible Advanced Settings group (scoring weights + resume)."""
+        group = QGroupBox("Advanced Settings")
+        group.setCheckable(True)
+        group.setChecked(False)  # collapsed by default
+        form = QFormLayout(group)
+
+        # --- Score weights ---
+        weights_label = QLabel("Score weights (auto-normalised to 100%)")
+        weights_label.setStyleSheet("color: #888; font-size: 11px;")
+        form.addRow(weights_label)
+
+        self.catalog_weight_spin = QDoubleSpinBox()
+        self.catalog_weight_spin.setRange(0.01, 1.0)
+        self.catalog_weight_spin.setSingleStep(0.05)
+        self.catalog_weight_spin.setDecimals(2)
+        self.catalog_weight_spin.setValue(DEFAULT_CATALOG_WEIGHT)
+        self.catalog_weight_spin.setToolTip("HTML quality: title, H1, meta, breadcrumb, price text")
+        form.addRow("Catalog weight:", self.catalog_weight_spin)
+
+        self.machine_weight_spin = QDoubleSpinBox()
+        self.machine_weight_spin.setRange(0.01, 1.0)
+        self.machine_weight_spin.setSingleStep(0.05)
+        self.machine_weight_spin.setDecimals(2)
+        self.machine_weight_spin.setValue(DEFAULT_MACHINE_WEIGHT)
+        self.machine_weight_spin.setToolTip("Schema.org, SKU, GTIN, canonical, noindex")
+        form.addRow("Machine weight:", self.machine_weight_spin)
+
+        self.commerce_weight_spin = QDoubleSpinBox()
+        self.commerce_weight_spin.setRange(0.01, 1.0)
+        self.commerce_weight_spin.setSingleStep(0.05)
+        self.commerce_weight_spin.setDecimals(2)
+        self.commerce_weight_spin.setValue(DEFAULT_COMMERCE_WEIGHT)
+        self.commerce_weight_spin.setToolTip("Price, images, shipping, returns, description quality")
+        form.addRow("Commerce weight:", self.commerce_weight_spin)
+
+        self.agent_ready_threshold_spin = QSpinBox()
+        self.agent_ready_threshold_spin.setRange(0, 100)
+        self.agent_ready_threshold_spin.setValue(DEFAULT_AGENT_READY_THRESHOLD)
+        self.agent_ready_threshold_spin.setToolTip(
+            "Minimum overall_score for a product to be flagged agent_ready=True"
+        )
+        form.addRow("Agent-ready threshold:", self.agent_ready_threshold_spin)
+
+        # --- Resume from checkpoint ---
+        resume_separator = QLabel("Resume")
+        resume_separator.setStyleSheet("color: #888; font-size: 11px; margin-top: 6px;")
+        form.addRow(resume_separator)
+
+        self.resume_cb = QCheckBox("Resume from previous run")
+        self.resume_cb.setToolTip(
+            "Skip the fetch phase by reusing pages cached in a previous run's output folder."
+        )
+        self.resume_cb.stateChanged.connect(self._on_resume_toggled)
+        form.addRow("", self.resume_cb)
+
+        resume_row = QHBoxLayout()
+        self.resume_dir_input = QLineEdit()
+        self.resume_dir_input.setPlaceholderText("Path to previous output dir")
+        self.resume_dir_input.setEnabled(False)
+        self.resume_dir_btn = QPushButton("Browse...")
+        self.resume_dir_btn.setEnabled(False)
+        self.resume_dir_btn.clicked.connect(self._on_resume_dir_browse_clicked)
+        resume_row.addWidget(self.resume_dir_input)
+        resume_row.addWidget(self.resume_dir_btn)
+        form.addRow("Checkpoint dir:", resume_row)
 
         return group
 
@@ -238,6 +359,7 @@ class InputTab(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.start_scan_btn = QPushButton("Start Scan")
+        self.start_scan_btn.setObjectName("primary")
         self.start_scan_btn.setDefault(True)
         self.start_scan_btn.setEnabled(False)
 
@@ -257,6 +379,10 @@ class InputTab(QWidget):
         self.discover_btn.clicked.connect(self._on_discover_clicked)
         self.load_sitemap_btn.clicked.connect(self._on_load_sitemap_clicked)
 
+        # Autodiscover rezultati iz kontrolera
+        self.audit_controller.sitemap_discovered.connect(self._on_sitemap_discovered)
+        self.audit_controller.sitemap_discover_failed.connect(self._on_sitemap_discover_failed)
+
         # File browse
         self.browse_btn.clicked.connect(self._on_browse_clicked)
 
@@ -273,17 +399,40 @@ class InputTab(QWidget):
         self.domain_input.textChanged.connect(self._on_input_changed)
         self.manual_urls_edit.textChanged.connect(self._on_input_changed)
 
+        # Save advanced settings on change
+        self.max_workers_spin.valueChanged.connect(self._save_state)
+        self.catalog_weight_spin.valueChanged.connect(self._save_state)
+        self.machine_weight_spin.valueChanged.connect(self._save_state)
+        self.commerce_weight_spin.valueChanged.connect(self._save_state)
+        self.agent_ready_threshold_spin.valueChanged.connect(self._save_state)
+
     def _load_saved_state(self):
         """Load saved state from QSettings."""
         self.sitemap_url_input.setText(self._settings.value("input/sitemap_url", ""))
         self.domain_input.setText(self._settings.value("input/domain", ""))
         self.output_dir_input.setText(self._settings.value("input/output_dir", "outputs/"))
-        
+
         max_urls = self._settings.value("input/max_urls", "")
         self.max_urls_input.setText(max_urls if max_urls else "")
-        
+
         delay = self._settings.value("input/delay", 1)
         self.delay_spin.setValue(int(delay))
+
+        self.max_workers_spin.setValue(
+            int(self._settings.value("input/max_workers", DEFAULT_MAX_WORKERS))
+        )
+        self.catalog_weight_spin.setValue(
+            float(self._settings.value("input/catalog_weight", DEFAULT_CATALOG_WEIGHT))
+        )
+        self.machine_weight_spin.setValue(
+            float(self._settings.value("input/machine_weight", DEFAULT_MACHINE_WEIGHT))
+        )
+        self.commerce_weight_spin.setValue(
+            float(self._settings.value("input/commerce_weight", DEFAULT_COMMERCE_WEIGHT))
+        )
+        self.agent_ready_threshold_spin.setValue(
+            int(self._settings.value("input/agent_ready_threshold", DEFAULT_AGENT_READY_THRESHOLD))
+        )
 
     def _save_state(self):
         """Save current state to QSettings."""
@@ -292,6 +441,13 @@ class InputTab(QWidget):
         self._settings.setValue("input/output_dir", self.output_dir_input.text())
         self._settings.setValue("input/max_urls", self.max_urls_input.text())
         self._settings.setValue("input/delay", self.delay_spin.value())
+        self._settings.setValue("input/max_workers", self.max_workers_spin.value())
+        self._settings.setValue("input/catalog_weight", self.catalog_weight_spin.value())
+        self._settings.setValue("input/machine_weight", self.machine_weight_spin.value())
+        self._settings.setValue("input/commerce_weight", self.commerce_weight_spin.value())
+        self._settings.setValue(
+            "input/agent_ready_threshold", self.agent_ready_threshold_spin.value()
+        )
 
     def _validate_inputs(self) -> tuple[bool, str]:
         """
@@ -356,22 +512,39 @@ class InputTab(QWidget):
         """Handle auto-discover button click."""
         domain = self.domain_input.text().strip()
         if not domain:
-            self.sitemap_status_label.setText("Enter domain first")
-            self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
+            self._set_sitemap_status("Enter domain first", "error")
             return
 
         if not self._is_valid_url(domain):
-            self.sitemap_status_label.setText("Domain must start with http:// or https://")
-            self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
+            self._set_sitemap_status("Domain must start with http:// or https://", "error")
             return
 
-        self.sitemap_status_label.setText("Discovering sitemap...")
-        self.sitemap_status_label.setStyleSheet("color: #1976d2;")
+        self._set_sitemap_status("Discovering sitemap...", "info")
+        self.discover_btn.setEnabled(False)
+        self.audit_controller.discover_sitemap(domain)
 
-        # TODO: Call backend sitemap discover through controller
-        # For now, just update status
-        self.sitemap_status_label.setText("Auto-discover not implemented yet")
-        self.sitemap_status_label.setStyleSheet("color: #666;")
+    def _on_sitemap_discovered(self, url: str):
+        """Handle successful sitemap autodiscover."""
+        self.discover_btn.setEnabled(True)
+        self._set_sitemap_status(f"Found: {url}", "success")
+        self.sitemap_url_input.setText(url)
+
+    def _on_sitemap_discover_failed(self, message: str):
+        """Handle failed sitemap autodiscover."""
+        self.discover_btn.setEnabled(True)
+        self._set_sitemap_status(message, "error")
+
+    def _set_sitemap_status(self, text: str, level: str = "info"):
+        """Update sitemap status label with color coding."""
+        colors = {
+            "info":    "#1976d2",
+            "success": "#388e3c",
+            "error":   "#d32f2f",
+        }
+        self.sitemap_status_label.setText(text)
+        self.sitemap_status_label.setStyleSheet(
+            f"color: {colors.get(level, '#666666')};"
+        )
 
     def _on_load_sitemap_clicked(self):
         """Handle load sitemap button click."""
@@ -424,6 +597,29 @@ class InputTab(QWidget):
             self.sitemap_status_label.setText(f"Error loading file: {str(e)}")
             self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
 
+    def _on_playwright_toggled(self, state: int):
+        """Warn that Playwright forces sequential mode."""
+        if state:
+            self.max_workers_spin.setEnabled(False)
+        else:
+            self.max_workers_spin.setEnabled(True)
+
+    def _on_resume_toggled(self, state: int):
+        """Enable/disable resume path input."""
+        enabled = bool(state)
+        self.resume_dir_input.setEnabled(enabled)
+        self.resume_dir_btn.setEnabled(enabled)
+
+    def _on_resume_dir_browse_clicked(self):
+        """Handle resume directory browse click."""
+        dir_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Previous Output Directory",
+            self.resume_dir_input.text() or "outputs/",
+        )
+        if dir_path:
+            self.resume_dir_input.setText(dir_path)
+
     def _on_output_dir_browse_clicked(self):
         """Handle output directory browse click."""
         dir_path = QFileDialog.getExistingDirectory(
@@ -458,6 +654,20 @@ class InputTab(QWidget):
             "delay": self.delay_spin.value(),
             "output_dir": self.output_dir_input.text().strip(),
             "urls": self._collected_urls,
+            # Fetch options
+            "max_workers": self.max_workers_spin.value(),
+            "use_playwright": self.use_playwright_cb.isChecked(),
+            # Scoring
+            "catalog_weight": self.catalog_weight_spin.value(),
+            "machine_weight": self.machine_weight_spin.value(),
+            "commerce_weight": self.commerce_weight_spin.value(),
+            "agent_ready_threshold": self.agent_ready_threshold_spin.value(),
+            # Checkpoint / resume
+            "resume_from": (
+                self.resume_dir_input.text().strip()
+                if self.resume_cb.isChecked()
+                else ""
+            ),
         }
 
         # Emit signal

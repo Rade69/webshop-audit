@@ -4,6 +4,7 @@ Wrapper za audit pipeline.
 Odgovornost: Omogućiti pokretanje audit pipeline-a sa callback-ovima
 za progress i log poruke. Koristi se i iz CLI-ja i iz GUI-a.
 """
+import json
 import os
 import time
 from datetime import datetime
@@ -18,7 +19,17 @@ from audit.sitemap import (
     fetch_sitemap,
     filter_product_like_urls,
 )
-from config import DEFAULT_DELAY, DEFAULT_OUTPUT_DIR
+from config import (
+    DEFAULT_DELAY,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_MAX_WORKERS,
+    DEFAULT_USE_PLAYWRIGHT,
+    DEFAULT_CATALOG_WEIGHT,
+    DEFAULT_MACHINE_WEIGHT,
+    DEFAULT_COMMERCE_WEIGHT,
+    DEFAULT_AGENT_READY_THRESHOLD,
+    CHECKPOINT_FILENAME,
+)
 
 
 def run_audit(
@@ -70,6 +81,13 @@ def run_audit(
     output_dir = config.get("output_dir")
     max_urls = config.get("max_urls")
     delay = config.get("delay", DEFAULT_DELAY)
+    max_workers = config.get("max_workers", DEFAULT_MAX_WORKERS)
+    use_playwright = config.get("use_playwright", DEFAULT_USE_PLAYWRIGHT)
+    catalog_weight = config.get("catalog_weight", DEFAULT_CATALOG_WEIGHT)
+    machine_weight = config.get("machine_weight", DEFAULT_MACHINE_WEIGHT)
+    commerce_weight = config.get("commerce_weight", DEFAULT_COMMERCE_WEIGHT)
+    agent_ready_threshold = config.get("agent_ready_threshold", DEFAULT_AGENT_READY_THRESHOLD)
+    resume_from = config.get("resume_from", "")  # path to previous output_dir
 
     run_start = time.time()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -105,12 +123,44 @@ def run_audit(
     log("info", f"Collected {total_urls} URLs")
     report_progress(0, total_urls, "url_collection")
 
-    # --- Step 2: Fetch pages ---
-    report_progress(0, total_urls, "fetch")
-    log("info", "Fetching pages...")
-    
-    fetch_results = fetcher.fetch_pages(urls, delay_seconds=delay)
-    
+    # --- Step 2: Fetch pages (with optional resume from checkpoint) ---
+    checkpoint_path = os.path.join(output_dir, CHECKPOINT_FILENAME)
+    fetch_results: list[dict] = []
+
+    if resume_from:
+        prev_checkpoint = os.path.join(resume_from, CHECKPOINT_FILENAME)
+        if os.path.isfile(prev_checkpoint):
+            log("info", f"Resuming from checkpoint: {prev_checkpoint}")
+            with open(prev_checkpoint, encoding="utf-8") as f:
+                fetch_results = json.load(f)
+            log("info", f"Loaded {len(fetch_results)} cached pages from checkpoint")
+        else:
+            log("warning", f"Checkpoint not found at {prev_checkpoint}, fetching fresh")
+
+    if not fetch_results:
+        report_progress(0, total_urls, "fetch")
+        mode = "Playwright" if use_playwright else f"{max_workers} workers"
+        log("info", f"Fetching {total_urls} pages ({mode}, delay={delay}s)...")
+
+        def _fetch_progress(done: int, total: int) -> None:
+            report_progress(done, total, "fetch")
+
+        fetch_results = fetcher.fetch_pages(
+            urls,
+            delay_seconds=delay,
+            max_workers=max_workers,
+            use_playwright=use_playwright,
+            progress_callback=_fetch_progress,
+        )
+
+        # Persist checkpoint so this run can be resumed if it's interrupted later
+        try:
+            with open(checkpoint_path, "w", encoding="utf-8") as f:
+                json.dump(fetch_results, f)
+            log("info", "Checkpoint saved")
+        except OSError as e:
+            log("warning", f"Could not save checkpoint: {e}")
+
     # Izdvoji greške
     errors = [
         {"url": r["url"], "error": r["error"], "status_code": r.get("status_code")}
@@ -118,7 +168,7 @@ def run_audit(
         if r["error"] or not r["html"]
     ]
     successful_fetches = [r for r in fetch_results if r["html"]]
-    
+
     log("info", f"Fetched: {len(successful_fetches)} OK, {len(errors)} errors")
     report_progress(len(successful_fetches), total_urls, "parse")
 
@@ -159,7 +209,13 @@ def run_audit(
 
     # --- Step 5: Score ---
     log("info", "Scoring products...")
-    df_scored = build_scored_dataframe(df_raw)
+    df_scored = build_scored_dataframe(
+        df_raw,
+        catalog_weight=catalog_weight,
+        machine_weight=machine_weight,
+        commerce_weight=commerce_weight,
+        agent_ready_threshold=agent_ready_threshold,
+    )
     export_dataframe_csv(df_scored, os.path.join(output_dir, "products_scored.csv"))
     log("info", f"Exported products_scored.csv — {len(df_scored)} rows")
 

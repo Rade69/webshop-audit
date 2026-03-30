@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QTabWidget,
 )
 
+from gui.app_state import AppState
 from gui.controllers.audit_run_controller import AuditRunController
 from gui.controllers.results_controller import ResultsController
 from gui.controllers.review_controller import ReviewController
@@ -23,6 +24,8 @@ from gui.tabs.input_tab import InputTab
 from gui.tabs.run_tab import RunTab
 from gui.tabs.results_tab import ResultsTab
 from gui.tabs.review_queue_tab import ReviewQueueTab
+
+from gui.styles.theme import apply_theme
 
 
 class MainWindow(QMainWindow):
@@ -42,6 +45,13 @@ class MainWindow(QMainWindow):
         self.results_controller = ResultsController()
         self.review_controller = ReviewController()
 
+        # Centralizirani pogled na stanje cijele aplikacije
+        self.app_state = AppState(
+            run_state=self.audit_controller.state,
+            results_state=self.results_controller.state,
+            review_state=self.review_controller.state,
+        )
+
         # Kreiraj tabove i proslijedi kontrolere
         self._create_tabs()
 
@@ -53,6 +63,10 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self._setup_status_bar()
+
+        # Apply dark theme
+        from PyQt6.QtWidgets import QApplication
+        apply_theme(QApplication.instance())
 
     def _create_tabs(self):
         """Kreira sve tabove i povezuje ih sa kontrolerima."""

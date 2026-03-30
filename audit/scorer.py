@@ -3,7 +3,14 @@ from typing import Optional
 import pandas as pd
 
 from audit.utils import is_noindex, normalize_url_for_comparison
-from config import MIN_VISIBLE_TEXT_LENGTH, MIN_IMAGE_COUNT
+from config import (
+    MIN_VISIBLE_TEXT_LENGTH,
+    MIN_IMAGE_COUNT,
+    DEFAULT_CATALOG_WEIGHT,
+    DEFAULT_MACHINE_WEIGHT,
+    DEFAULT_COMMERCE_WEIGHT,
+    DEFAULT_AGENT_READY_THRESHOLD,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -191,10 +198,23 @@ def detect_missing_fields(row: dict) -> list[str]:
 # DataFrame-level scoring
 # ---------------------------------------------------------------------------
 
-def build_scored_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def build_scored_dataframe(
+    df: pd.DataFrame,
+    catalog_weight: float = DEFAULT_CATALOG_WEIGHT,
+    machine_weight: float = DEFAULT_MACHINE_WEIGHT,
+    commerce_weight: float = DEFAULT_COMMERCE_WEIGHT,
+    agent_ready_threshold: int = DEFAULT_AGENT_READY_THRESHOLD,
+) -> pd.DataFrame:
     """
     Adds scoring columns and flag columns to the raw DataFrame.
     Returns the enriched DataFrame.
+
+    Args:
+        df: Raw product DataFrame.
+        catalog_weight: Weight for catalog_score in overall_score (auto-normalised).
+        machine_weight: Weight for machine_score in overall_score (auto-normalised).
+        commerce_weight: Weight for commerce_score in overall_score (auto-normalised).
+        agent_ready_threshold: Minimum overall_score for agent_ready=True.
     """
     df = df.copy()
     rows_as_dicts = df.to_dict(orient="records")
@@ -203,13 +223,19 @@ def build_scored_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["machine_score"] = [score_machine_readability(r) for r in rows_as_dicts]
     df["commerce_score"] = [score_commerce_clarity(r) for r in rows_as_dicts]
 
-    # Overall score: weighted average
-    # AGENT-FRIENDLY: commerce_clarity je jednako važan kao machine_readability
-    # catalog (HTML quality) 30% | machine (schema+tech) 35% | commerce (clarity) 35%
+    # Normalise weights so they always sum to 1, even if the caller passes
+    # raw percentage integers (e.g. 30, 35, 35) or mismatched floats.
+    total_weight = catalog_weight + machine_weight + commerce_weight
+    if total_weight <= 0:
+        total_weight = 1.0
+    w_cat = catalog_weight / total_weight
+    w_mac = machine_weight / total_weight
+    w_com = commerce_weight / total_weight
+
     df["overall_score"] = (
-        df["catalog_score"] * 0.30
-        + df["machine_score"] * 0.35
-        + df["commerce_score"] * 0.35
+        df["catalog_score"] * w_cat
+        + df["machine_score"] * w_mac
+        + df["commerce_score"] * w_com
     ).round().astype(int)
 
     # Human-readable summary columns
@@ -244,9 +270,8 @@ def build_scored_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["flag_not_product_page"] = ~df["is_likely_product_page"].astype(bool)
 
     # Agent-ready: binary signal za "je li ovaj proizvod spreman za AI preporuku?"
-    # requires: overall_score >= 65, not JS-rendered, has price, has schema
     df["agent_ready"] = (
-        (df["overall_score"] >= 65)
+        (df["overall_score"] >= agent_ready_threshold)
         & (~df["flag_js_rendered"])
         & (~df["suspicious_price_missing"])
         & (~df["suspicious_schema_missing"])
