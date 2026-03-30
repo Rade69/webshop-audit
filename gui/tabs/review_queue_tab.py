@@ -241,6 +241,8 @@ class ReviewQueueTab(QWidget):
 
     def _create_table_view(self) -> QWidget:
         """Create table view widget."""
+        from gui.widgets.delegates import StatusDelegate
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -255,6 +257,15 @@ class ReviewQueueTab(QWidget):
 
         self.table_model = ReviewTableModel()
         self.table_view.setModel(self.table_model)
+
+        # Set delegate for status column (index 4)
+        self.status_delegate = StatusDelegate(self.table_view)
+        self.table_view.setItemDelegateForColumn(4, self.status_delegate)
+
+        # Additional table styling
+        self.table_view.setAlternatingRowColors(True)
+        self.table_view.verticalHeader().setDefaultSectionSize(32)
+        self.table_view.verticalHeader().setVisible(False)
 
         layout.addWidget(self.table_view)
 

@@ -79,19 +79,18 @@ class RunTab(QWidget):
         """Create status header group."""
         group = QGroupBox("Run Status")
         layout = QHBoxLayout(group)
+        layout.setContentsMargins(8, 6, 8, 6)
 
         # Status label
-        layout.addWidget(QLabel("Status:"))
         self.status_label = QLabel("Idle")
-        self.status_label.setStyleSheet("font-weight: bold;")
+        self.status_label.setObjectName("status_idle")
         layout.addWidget(self.status_label)
 
         layout.addStretch()
 
         # Phase label
-        layout.addWidget(QLabel("Phase:"))
         self.phase_label = QLabel("-")
-        self.phase_label.setStyleSheet("color: #666;")
+        self.phase_label.setStyleSheet("color: #5B6B7F;")
         layout.addWidget(self.phase_label)
 
         return group
