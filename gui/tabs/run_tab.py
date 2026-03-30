@@ -277,7 +277,8 @@ class RunTab(QWidget):
     @pyqtSlot()
     def _on_run_started(self):
         """Handle run started signal."""
-        self._start_time = QTimer.currentMSecsSinceStart()
+        import time
+        self._start_time = time.time()
         self.log_view.clear()
         self._set_running_state()
         self._append_log("[INFO] Starting scan...", "info")
@@ -358,9 +359,9 @@ class RunTab(QWidget):
 
     def _update_elapsed(self):
         """Update elapsed time display."""
+        import time
         if self._start_time > 0:
-            elapsed_ms = QTimer.currentMSecsSinceStart() - self._start_time
-            elapsed_sec = elapsed_ms // 1000
+            elapsed_sec = int(time.time() - self._start_time)
             minutes = elapsed_sec // 60
             seconds = elapsed_sec % 60
             self.elapsed_value.setText(f"{minutes:02d}:{seconds:02d}")
