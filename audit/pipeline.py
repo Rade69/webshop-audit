@@ -75,11 +75,17 @@ def run_audit(
             progress_callback(processed, total, phase)
 
     # Ekstraktuj konfiguraciju
-    input_file = config.get("input_file")
-    domain = config.get("domain")
-    sitemap_url = config.get("sitemap_url")
-    output_dir = config.get("output_dir")
-    max_urls = config.get("max_urls")
+    # "input_file" i "urls_file" su sinonimi — GUI šalje "urls_file"
+    input_file = config.get("input_file") or config.get("urls_file") or ""
+    domain = config.get("domain") or ""
+    sitemap_url = config.get("sitemap_url") or ""
+    output_dir = config.get("output_dir") or ""
+    # max_urls može doći kao string iz GUI QLineEdit — konvertuj u int ili None
+    _raw_max = config.get("max_urls")
+    try:
+        max_urls = int(_raw_max) if _raw_max else None
+    except (ValueError, TypeError):
+        max_urls = None
     delay = config.get("delay", DEFAULT_DELAY)
     max_workers = config.get("max_workers", DEFAULT_MAX_WORKERS)
     use_playwright = config.get("use_playwright", DEFAULT_USE_PLAYWRIGHT)
@@ -100,7 +106,14 @@ def run_audit(
     log("info", f"Output dir: {output_dir}")
 
     # --- Step 1: Collect URLs ---
-    if input_file and os.path.isfile(input_file):
+    # Highest priority: URLs already collected by GUI (Load Sitemap / file browse)
+    pre_loaded_urls: list[str] = config.get("urls") or []
+    if pre_loaded_urls:
+        urls = pre_loaded_urls
+        if max_urls:
+            urls = urls[:max_urls]
+        log("info", f"Using {len(urls)} pre-loaded URLs")
+    elif input_file and os.path.isfile(input_file):
         log("info", f"Loading URLs from file: {input_file}")
         urls = _collect_urls_from_file(input_file)
         if max_urls:
