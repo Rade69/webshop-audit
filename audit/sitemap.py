@@ -1,3 +1,4 @@
+import re
 import requests
 import xml.etree.ElementTree as ET
 from typing import Optional
@@ -90,7 +91,9 @@ def collect_urls_from_sitemap(
 ) -> list[str]:
     """
     Recursively walks sitemap/sitemapindex and collects all URLs.
-    Deduplicates URLs. Respects max_urls limit.
+    Deduplicates URLs. max_urls limit is applied only AFTER all child
+    sitemaps are fully traversed — this ensures that category sitemaps
+    listed before product sitemaps cannot crowd out product URLs.
     """
     if _visited is None:
         _visited = set()
@@ -113,10 +116,10 @@ def collect_urls_from_sitemap(
             seen_urls.add(url)
             collected.append(url)
 
+    # Recurse into children WITHOUT passing max_urls — collect everything first.
+    # The limit is applied at the very end so no child sitemap is skipped early.
     for child_url in result["child_sitemaps"]:
-        if max_urls and len(collected) >= max_urls:
-            break
-        child_results = collect_urls_from_sitemap(child_url, max_urls, _visited)
+        child_results = collect_urls_from_sitemap(child_url, None, _visited)
         for url in child_results:
             if url not in seen_urls:
                 seen_urls.add(url)
@@ -138,6 +141,10 @@ def filter_product_like_urls(urls: list[str]) -> tuple[list[str], bool]:
     used_fallback=True means no patterns matched and ALL urls were returned.
     Caller should warn the user when fallback is used.
     """
+    # Numeric product-ID pattern common in Balkan/EU shops:
+    # e.g. /majica/53211619-brooklyn-essentials  →  /{word}/{6+digits}-{slug}
+    _numeric_id_re = re.compile(r'/\d{5,}-[a-z]')
+
     def is_product_like(url: str) -> bool:
         lower = url.lower()
         for excl in PRODUCT_URL_EXCLUSIONS:
@@ -146,6 +153,9 @@ def filter_product_like_urls(urls: list[str]) -> tuple[list[str], bool]:
         for pattern in PRODUCT_URL_PATTERNS:
             if pattern in lower:
                 return True
+        # Detect numeric product IDs (checked last, after exclusions pass)
+        if _numeric_id_re.search(lower):
+            return True
         return False
 
     filtered = [u for u in urls if is_product_like(u)]

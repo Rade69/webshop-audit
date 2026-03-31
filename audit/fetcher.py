@@ -2,7 +2,7 @@ import time
 import threading
 import concurrent.futures
 import requests
-from typing import Optional, Callable
+from typing import Optional, Callable, TYPE_CHECKING
 
 from config import (
     DEFAULT_TIMEOUT,
@@ -156,6 +156,7 @@ def fetch_pages(
     max_workers: int = DEFAULT_MAX_WORKERS,
     use_playwright: bool = False,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    stop_event: Optional[threading.Event] = None,
 ) -> list[dict]:
     """
     Fetches multiple URLs using a thread pool (concurrent).
@@ -181,6 +182,8 @@ def fetch_pages(
     if use_playwright or max_workers <= 1:
         results = []
         for i, url in enumerate(urls):
+            if stop_event and stop_event.is_set():
+                break
             result = fetch_page(url, use_playwright=use_playwright)
             results.append(result)
             if progress_callback:
@@ -205,6 +208,9 @@ def fetch_pages(
 
     batch_size = max_workers
     for batch_start in range(0, total, batch_size):
+        # Check stop before starting each new batch
+        if stop_event and stop_event.is_set():
+            break
         batch_end = min(batch_start + batch_size, total)
         batch = [(i, urls[i]) for i in range(batch_start, batch_end)]
 
@@ -215,4 +221,4 @@ def fetch_pages(
         if delay_seconds > 0 and batch_end < total:
             time.sleep(delay_seconds)
 
-    return results  # type: ignore[return-value]
+    return [r for r in results if r is not None]

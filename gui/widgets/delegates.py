@@ -1,8 +1,8 @@
 """
-Custom delegates for table views.
+Prilagođeni delegati za prikaz u tabelama.
 
-Responsibility: Custom painting for score badges, flags, and status pills.
-Focus on informative clarity over decoration.
+Odgovornost: Crtanje score badge-ova, flag ćelija i status pill-ova.
+Dizajn: Zaobljeni oblici, boje iz Soft Sage & Deep Blue palete.
 """
 from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
 from PyQt6.QtCore import Qt, QRectF, QSize
@@ -13,16 +13,16 @@ from gui.styles.theme import COLORS
 
 class ScoreDelegate(QStyledItemDelegate):
     """
-    Delegate for rendering integer score values as colored rounded-rect badges.
+    Delegate za prikaz numeričkih ocjena kao obojenih zaobljenih kvadrata.
 
-    Colors:
-    - >= 70: green (#5FA777)
-    - 40-69: amber (#D9A441)
-    - < 40: red (#C96A5A)
+    Boje prema pragu:
+    - >= 70: zelena (#2E7D32)
+    - 40–69: narandžasta (#FF8C00)
+    - < 40:  crvena (#B53A3A)
     """
 
     def _badge_colors(self, score: int) -> tuple:
-        """Get background and text colors for score."""
+        """Vraća (bg, text) boje za zadatu ocjenu."""
         if score >= 70:
             return COLORS["score_high"], "#FFFFFF"
         elif score >= 40:
@@ -31,7 +31,7 @@ class ScoreDelegate(QStyledItemDelegate):
             return COLORS["score_low"], "#FFFFFF"
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
-        """Paint the score badge."""
+        """Crta badge sa ocjenom."""
         score = index.data(Qt.ItemDataRole.DisplayRole)
         if not isinstance(score, (int, float)):
             super().paint(painter, option, index)
@@ -39,22 +39,18 @@ class ScoreDelegate(QStyledItemDelegate):
 
         painter.save()
 
-        # Determine colors
         bg_color, text_color = self._badge_colors(int(score))
 
-        # Draw background
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setBrush(QColor(bg_color))
         painter.setPen(Qt.PenStyle.NoPen)
 
-        # Draw rounded rect badge
         badge_w, badge_h = 48, 22
         bx = option.rect.x() + (option.rect.width() - badge_w) // 2
         by = option.rect.y() + (option.rect.height() - badge_h) // 2
         badge_rect = QRectF(bx, by, badge_w, badge_h)
-        painter.drawRoundedRect(badge_rect, 4, 4)
+        painter.drawRoundedRect(badge_rect, 5, 5)
 
-        # Draw text
         painter.setPen(QColor(text_color))
         font = QFont()
         font.setBold(True)
@@ -64,62 +60,59 @@ class ScoreDelegate(QStyledItemDelegate):
 
         painter.restore()
 
-    def sizeHint(self, option, index):
-        """Return size hint for the delegate."""
-        return QSize(56, 28)
+    def sizeHint(self, _option, _index):
+        return QSize(56, 32)
 
 
 class StatusDelegate(QStyledItemDelegate):
     """
-    Delegate for rendering review status as colored pill badges.
+    Delegate za prikaz review statusa kao pill oblika sa bojama.
 
-    Statuses:
-    - pending: gray (#8A94A6)
-    - needs_fix: red (#C96A5A)
-    - reviewed: green (#5FA777)
-    - fixed: blue (#4A90C2)
+    Statusi (interni ključevi → srpski prikaz):
+    - pending    → Na čekanju (siva)
+    - needs_fix  → Treba popravku (crvena)
+    - reviewed   → Pregledano (zelena)
+    - fixed      → Popravljeno (plava #26629E)
     """
 
+    # Interni engleski ključ → srpski prikaz u pill-u
     LABELS = {
-        "pending": "Pending",
-        "needs_fix": "Needs Fix",
-        "reviewed": "Reviewed",
-        "fixed": "Fixed",
+        "pending":   "Na čekanju",     # "Pending"
+        "needs_fix": "Treba popravku", # "Needs Fix"
+        "reviewed":  "Pregledano",     # "Reviewed"
+        "fixed":     "Popravljeno",    # "Fixed"
     }
 
     def _badge_colors(self, status: str) -> tuple:
-        """Get background and text colors for status."""
+        """Vraća (bg, text) boje za zadati status."""
         status_map = {
-            "pending": (COLORS["status_pending"], "#FFFFFF"),
+            "pending":   (COLORS["status_pending"],   "#FFFFFF"),
             "needs_fix": (COLORS["status_needs_fix"], "#FFFFFF"),
-            "reviewed": (COLORS["status_reviewed"], "#FFFFFF"),
-            "fixed": (COLORS["status_fixed"], "#FFFFFF"),
+            "reviewed":  (COLORS["status_reviewed"],  "#FFFFFF"),
+            "fixed":     (COLORS["status_fixed"],     "#FFFFFF"),
         }
         return status_map.get(status, (COLORS["text_secondary"], "#FFFFFF"))
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
-        """Paint the status pill badge."""
+        """Crta pill badge sa statusom."""
         status = index.data(Qt.ItemDataRole.DisplayRole) or "pending"
 
         painter.save()
 
-        # Determine colors
         bg_color, text_color = self._badge_colors(status)
 
-        # Draw pill shape
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setBrush(QColor(bg_color))
         painter.setPen(Qt.PenStyle.NoPen)
 
-        # High border radius for pill shape
-        badge_w = min(80, option.rect.width() - 16)
+        # Visoki radius za pill oblik
+        badge_w = min(110, option.rect.width() - 12)
         badge_h = 20
         bx = option.rect.x() + (option.rect.width() - badge_w) // 2
         by = option.rect.y() + (option.rect.height() - badge_h) // 2
         badge_rect = QRectF(bx, by, badge_w, badge_h)
         painter.drawRoundedRect(badge_rect, 10, 10)
 
-        # Draw text
         label = self.LABELS.get(status, status)
         painter.setPen(QColor(text_color))
         font = QFont()
@@ -130,36 +123,41 @@ class StatusDelegate(QStyledItemDelegate):
 
         painter.restore()
 
-    def sizeHint(self, option, index):
-        """Return size hint for the delegate."""
-        return QSize(90, 26)
+    def sizeHint(self, _option, _index):
+        return QSize(120, 32)
 
 
 class FlagDelegate(QStyledItemDelegate):
     """
-    Delegate for highlighting cells with non-empty flag strings.
-
-    Applies subtle background color for flags without being "loud".
+    Delegate za ćelije sa zastavicama — ističe probleme crvenom pozadinom.
+    Ako je ćelija prazna/"-", nema istaknute pozadine.
     """
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
-        """Paint the flag cell with background if content exists."""
+        """Crta ćeliju sa pozadinom ako postoje zastavice."""
         value = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        has_flags = value and value != "-"
 
         painter.save()
 
-        # Fill background based on content
-        if value:
-            # Subtle red background for flags
-            painter.fillRect(option.rect, QColor("#FEF2F2"))
+        if has_flags:
+            painter.fillRect(option.rect, QColor("#FFF0F0"))
             text_color = COLORS["flag_error"]
         else:
-            painter.fillRect(option.rect, QColor(COLORS["bg_table"]))
+            # Alternativna pozadina iz modela ako postoji, inače bijela
+            bg = index.data(Qt.ItemDataRole.BackgroundRole)
+            if bg:
+                painter.fillRect(option.rect, bg)
+            else:
+                painter.fillRect(option.rect, QColor(COLORS["bg_table"]))
             text_color = COLORS["text_secondary"]
 
-        # Draw text
         painter.setPen(QColor(text_color))
         text_rect = option.rect.adjusted(8, 0, -4, 0)
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, value)
+        painter.drawText(
+            text_rect,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            value
+        )
 
         painter.restore()

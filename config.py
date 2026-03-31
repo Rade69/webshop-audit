@@ -5,7 +5,7 @@ DEFAULT_USER_AGENT = (
 DEFAULT_TIMEOUT = 20
 DEFAULT_DELAY = 0.5
 DEFAULT_MAX_RETRIES = 3
-DEFAULT_MAX_URLS = None
+DEFAULT_MAX_URLS = 50
 DEFAULT_OUTPUT_DIR = "outputs"
 
 # Concurrent fetching
@@ -38,12 +38,16 @@ PRODUCT_URL_PATTERNS = [
     "/proizvod",
     "/p/",
     "/item",
-    "/artik",
+    "/artik",       # artikal, artikli
     "/shop/",
     "/store/",
     "/catalog/",
     "/katalog/",
-    "/dp/",       # Amazon style
+    "/dp/",         # Amazon style
+    "/sku/",
+    "/pd/",         # product detail
+    "/goods/",
+    "/detalj",      # detalji, detaljan
 ]
 
 PRODUCT_URL_EXCLUSIONS = [
@@ -60,4 +64,14 @@ PRODUCT_URL_EXCLUSIONS = [
     "/register",
     "/search",
     "/page/",
+    "/pages/",      # Shopify static pages
+    "/collections",  # Shopify category listing
+    "/policies/",
+    "/contact",
+    "/about",
+    "/o-nama",
+    "/dostava",
+    "/povrat",
+    "/wishlist",
+    "/compare",
 ]

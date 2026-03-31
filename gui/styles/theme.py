@@ -1,132 +1,192 @@
 """
-Theme stylesheet for the GUI application.
+GUI tema — Soft Sage & Deep Blue.
 
-Responsibility: Central QSS stylesheet with light analytical theme colors.
-Focus: Informative clarity, data readability, professional workspace.
+Paleta boja: trijadna (zelena/plava/narandžasta), optimizovana za dugotrajan rad.
+Primarna boja: #26629E (Deep Blue, korisničke specifikacije).
+Pozadinska osnova: #EFF6F1 (Soft Sage — odmor za oči, bez sivila).
 """
+import os
+
 from PyQt6.QtWidgets import QApplication
 
+_ASSETS = os.path.join(os.path.dirname(__file__), "..", "assets")
+_UP_ARROW   = os.path.join(_ASSETS, "arrow_up.svg").replace("\\", "/")
+_DOWN_ARROW = os.path.join(_ASSETS, "arrow_down.svg").replace("\\", "/")
 
-# Color palette - Light Analytical Theme
+
+# ── Paleta boja ────────────────────────────────────────────────────────────────
 COLORS = {
-    # Main backgrounds
-    "bg_main": "#EEF2F7",
-    "bg_surface": "#FFFFFF",
-    "bg_subtle": "#F7F9FC",
-    "bg_input": "#FFFFFF",
-    "bg_table": "#FFFFFF",
-    "bg_table_alt": "#FAFBFD",
-    "bg_header": "#E3EAF3",
+    # Pozadine — "Mliječna Žalfija"
+    "bg_main":       "#EFF6F1",   # Osnova cijele aplikacije
+    "bg_surface":    "#FFFFFF",   # Kartice, paneli, grupboxovi
+    "bg_input":      "#F9FBF9",   # Input polja (blaga mint nijansa)
+    "bg_table":      "#FFFFFF",
+    "bg_table_alt":  "#E6F0E8",   # Alternativni red u tabeli
+    "bg_header":     "#D8E5D8",   # Header tabele i status bar
 
-    # Borders
-    "border": "#C9D3E0",
-    "border_soft": "#D9E1EC",
+    # Borderi
+    "border":        "#D1D5DB",   # Diskretna siva
 
-    # Text
-    "text_primary": "#1F2937",
-    "text_secondary": "#5B6B7F",
-    "text_muted": "#7B8794",
-    "text_disabled": "#A0AEC0",
+    # Tekst
+    "text_primary":   "#1A1D21",  # Slate crna, mekša od čisto crne
+    "text_secondary": "#4B5563",
 
-    # Accent
-    "accent": "#4A7CCF",
-    "accent_hover": "#3E6FBE",
-    "accent_soft": "#E8F0FB",
+    # Akcent — Deep Blue (korisničke specifikacije)
+    "accent":         "#26629E",
+    "accent_hover":   "#1D4E7F",
+    "accent_light":   "#D8E5F0",  # Hover pozadina za dugmad
 
-    # Scores
-    "score_high": "#5FA777",
-    "score_mid": "#D9A441",
-    "score_low": "#C96A5A",
+    # Status — Sunčana narandžasta (trijadni akcenat)
+    "status_orange":     "#FF8C00",
+    "status_orange_bg":  "#FFF7ED",
+    "status_orange_border": "#FFEDD5",
+
+    # Ocjene
+    "score_high": "#2E7D32",   # Zelena
+    "score_mid":  "#FF8C00",   # Narandžasta
+    "score_low":  "#B53A3A",   # Crvena
 
     # Review status
-    "status_pending": "#8A94A6",
-    "status_needs_fix": "#C96A5A",
-    "status_reviewed": "#5FA777",
-    "status_fixed": "#4A90C2",
+    "status_pending":   "#8A94A6",
+    "status_needs_fix": "#B53A3A",
+    "status_reviewed":  "#2E7D32",
+    "status_fixed":     "#26629E",
 
-    # Flags
-    "flag_error": "#C96A5A",
-    "flag_warning": "#D9A441",
-    "flag_ok": "#5FA777",
+    # Zastavice
+    "flag_error":   "#B53A3A",
+    "flag_warning": "#FF8C00",
+    "flag_ok":      "#2E7D32",
 }
 
 
 def build_stylesheet() -> str:
-    """
-    Build and return the complete QSS stylesheet.
-
-    Returns:
-        str: Complete QSS stylesheet string.
-    """
+    """Gradi i vraća kompletan QSS stylesheet."""
     c = COLORS
 
     return f"""
-/* ====== Global ====== */
+/* ══ Globalno ══════════════════════════════════════════════════════════════ */
 QMainWindow, QWidget {{
     background: {c['bg_main']};
     color: {c['text_primary']};
-    font-family: "Segoe UI", "Inter", "Helvetica Neue", sans-serif;
+    font-family: "Inter", "Segoe UI", "Helvetica Neue", sans-serif;
     font-size: 13px;
 }}
 
-/* ====== Tab Widget ====== */
+/* ══ Tab widget ═════════════════════════════════════════════════════════════*/
 QTabWidget::pane {{
     background: {c['bg_surface']};
     border: 1px solid {c['border']};
+    border-top: none;
 }}
 
+QTabBar {{
+    background: {c['bg_main']};
+}}
+
+/* Glavni tab bar — veliki ispunjeni tabovi */
 QTabBar::tab {{
     background: {c['bg_main']};
     color: {c['text_secondary']};
-    padding: 10px 20px;
+    padding: 9px 22px;
     border: none;
-    border-bottom: 3px solid transparent;
+    border-bottom: 2px solid transparent;
+    font-weight: 500;
 }}
 
 QTabBar::tab:selected {{
-    color: {c['text_primary']};
-    border-bottom: 3px solid {c['accent']};
     background: {c['bg_surface']};
+    color: {c['accent']};
+    font-weight: bold;
+    border-bottom: 3px solid {c['accent']};
 }}
 
 QTabBar::tab:hover:!selected {{
-    background: {c['accent_soft']};
+    background: {c['accent_light']};
+    color: {c['accent']};
 }}
 
-/* ====== Group Box ====== */
-QGroupBox {{
-    border: 1px solid {c['border']};
-    border-radius: 6px;
-    margin-top: 10px;
-    padding: 12px;
+/* Sub-tabovi unutar grupova — podcrtan stil, manji padding */
+QGroupBox QTabBar::tab, QWidget QTabWidget QTabBar::tab {{
+    padding: 6px 16px;
+    font-weight: normal;
+}}
+
+QGroupBox QTabBar::tab:selected, QWidget QTabWidget QTabBar::tab:selected {{
+    background: {c['bg_surface']};
+    color: {c['accent']};
+    border-bottom: 2px solid {c['accent']};
     font-weight: 600;
+}}
+
+/* ══ GroupBox ════════════════════════════════════════════════════════════════*/
+QGroupBox {{
+    background: {c['bg_surface']};
+    border: 1px solid {c['border']};
+    border-radius: 10px;
+    margin-top: 15px;
+    padding: 15px;
+    font-weight: bold;
     color: {c['text_secondary']};
 }}
 
 QGroupBox::title {{
     color: {c['text_primary']};
     subcontrol-origin: margin;
-    left: 10px;
-    padding: 0 4px;
+    left: 12px;
+    padding: 0 5px;
 }}
 
-/* ====== Inputs ====== */
+/* ══ Input polja ═════════════════════════════════════════════════════════════*/
 QLineEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
     background: {c['bg_input']};
     color: {c['text_primary']};
-    border: 1px solid {c['border_soft']};
+    border: 1px solid {c['border']};
     border-radius: 4px;
-    padding: 4px 8px;
+    padding: 5px 8px;
     min-height: 28px;
 }}
 
-QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus {{
+QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
     border: 1px solid {c['accent']};
+    background: #FFFFFF;
 }}
 
-QLineEdit:disabled, QPlainTextEdit:disabled {{
-    color: {c['text_disabled']};
+QLineEdit:disabled, QPlainTextEdit:disabled, QSpinBox:disabled {{
+    color: #A0AEC0;
     background: {c['bg_main']};
+}}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid {c['border']};
+    border-bottom: 1px solid {c['border']};
+    border-top-right-radius: 4px;
+    background: {c['bg_header']};
+}}
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 20px;
+    border-left: 1px solid {c['border']};
+    border-top: 1px solid {c['border']};
+    border-bottom-right-radius: 4px;
+    background: {c['bg_header']};
+}}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
+    background: {c['accent_light']};
+}}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    image: url("{_UP_ARROW}");
+    width: 10px;
+    height: 6px;
+}}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    image: url("{_DOWN_ARROW}");
+    width: 10px;
+    height: 6px;
 }}
 
 QComboBox::drop-down {{
@@ -134,36 +194,43 @@ QComboBox::drop-down {{
     width: 24px;
 }}
 
-/* ====== Buttons ====== */
+QComboBox QAbstractItemView {{
+    background: {c['bg_surface']};
+    border: 1px solid {c['border']};
+    selection-background-color: {c['accent_light']};
+}}
+
+/* ══ Dugmad ══════════════════════════════════════════════════════════════════*/
 QPushButton {{
     background: {c['bg_surface']};
     color: {c['text_primary']};
     border: 1px solid {c['border']};
-    border-radius: 4px;
-    padding: 5px 14px;
-    min-height: 28px;
+    border-radius: 6px;
+    padding: 6px 16px;
+    min-height: 30px;
+    font-weight: 500;
 }}
 
 QPushButton:hover {{
+    background: {c['accent_light']};
     border: 1px solid {c['accent']};
-    background: {c['accent_soft']};
 }}
 
 QPushButton:pressed {{
-    background: #d4e0f0;
+    background: #c5d8ee;
 }}
 
 QPushButton:disabled {{
-    color: {c['text_disabled']};
-    border-color: {c['border_soft']};
+    color: #A0AEC0;
+    border-color: #E5E7EB;
     background: {c['bg_main']};
 }}
 
 QPushButton#primary {{
     background: {c['accent']};
-    color: #ffffff;
+    color: #FFFFFF;
     border: none;
-    font-weight: 600;
+    font-weight: bold;
 }}
 
 QPushButton#primary:hover {{
@@ -171,28 +238,28 @@ QPushButton#primary:hover {{
 }}
 
 QPushButton#primary:disabled {{
-    background: #a0b8d8;
-    color: #ffffff;
+    background: #7AAACF;
+    color: #FFFFFF;
 }}
 
-QPushButton#danger {{
-    background: {c['flag_error']};
-    color: #ffffff;
-    border: none;
+/* ══ Status info box (sitemap/greška labela) ══════════════════════════════*/
+QLabel#status_info_box {{
+    background: {c['status_orange_bg']};
+    color: {c['status_orange']};
+    border: 1px solid {c['status_orange_border']};
+    padding: 8px;
+    border-radius: 6px;
+    font-weight: 600;
 }}
 
-QPushButton#danger:hover {{
-    background: #b55a4a;
-}}
-
-/* ====== Table ====== */
+/* ══ Tabela ══════════════════════════════════════════════════════════════════*/
 QTableView {{
     background: {c['bg_table']};
     alternate-background-color: {c['bg_table_alt']};
     color: {c['text_primary']};
-    gridline-color: {c['border_soft']};
-    border: 1px solid {c['border_soft']};
-    selection-background-color: {c['accent_soft']};
+    gridline-color: {c['border']};
+    border: 1px solid {c['border']};
+    selection-background-color: {c['accent_light']};
 }}
 
 QTableView::item {{
@@ -200,24 +267,41 @@ QTableView::item {{
 }}
 
 QTableView::item:selected {{
-    background: {c['accent_soft']};
+    background: {c['accent_light']};
+    color: {c['text_primary']};
 }}
 
 QHeaderView::section {{
     background: {c['bg_header']};
     color: {c['text_secondary']};
-    font-weight: 600;
-    font-size: 12px;
+    font-weight: bold;
     padding: 6px 8px;
     border: none;
-    border-right: 1px solid {c['border_soft']};
+    border-right: 1px solid {c['border']};
     border-bottom: 1px solid {c['border']};
 }}
 
-/* ====== Scrollbar ====== */
+/* ══ Progress bar ═══════════════════════════════════════════════════════════*/
+QProgressBar {{
+    background: {c['bg_input']};
+    border: 1px solid {c['border']};
+    border-radius: 4px;
+    min-height: 16px;
+    text-align: center;
+    color: {c['text_primary']};
+    font-size: 11px;
+}}
+
+QProgressBar::chunk {{
+    background: {c['status_orange']};
+    border-radius: 3px;
+}}
+
+/* ══ Scrollbar ═══════════════════════════════════════════════════════════════*/
 QScrollBar:vertical {{
     background: {c['bg_main']};
     width: 8px;
+    border: none;
 }}
 
 QScrollBar::handle:vertical {{
@@ -230,13 +314,12 @@ QScrollBar::handle:vertical:hover {{
     background: {c['accent']};
 }}
 
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-    height: 0px;
-}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
 
 QScrollBar:horizontal {{
     background: {c['bg_main']};
     height: 8px;
+    border: none;
 }}
 
 QScrollBar::handle:horizontal {{
@@ -245,87 +328,50 @@ QScrollBar::handle:horizontal {{
     min-width: 30px;
 }}
 
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
-    width: 0px;
-}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0px; }}
 
-/* ====== Progress Bar ====== */
-QProgressBar {{
-    background: {c['bg_subtle']};
-    border: 1px solid {c['border_soft']};
-    border-radius: 4px;
-    min-height: 16px;
-    text-align: center;
-    color: {c['text_primary']};
-    font-size: 11px;
-}}
-
-QProgressBar::chunk {{
-    background: {c['accent']};
-    border-radius: 4px;
-}}
-
-/* ====== Log Panel ====== */
+/* ══ Log panel ═══════════════════════════════════════════════════════════════*/
 QPlainTextEdit#log_panel {{
-    background: {c['bg_subtle']};
-    font-family: "Consolas", "JetBrains Mono", "Courier New", monospace;
+    background: #F5FAF6;
+    font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
     font-size: 12px;
     color: {c['text_primary']};
-    border: 1px solid {c['border_soft']};
+    border: 1px solid {c['border']};
+    border-radius: 6px;
 }}
 
-/* ====== Status Labels ====== */
-QLabel#status_idle {{
-    color: {c['text_secondary']};
-    font-weight: 600;
-}}
+/* ══ Status labele ═══════════════════════════════════════════════════════════*/
+QLabel#status_idle    {{ color: {c['text_secondary']}; font-weight: 600; }}
+QLabel#status_running {{ color: {c['accent']};          font-weight: 600; }}
+QLabel#status_done    {{ color: {c['score_high']};       font-weight: 600; }}
+QLabel#status_error   {{ color: {c['score_low']};        font-weight: 600; }}
+QLabel#status_stopped {{ color: {c['status_orange']};    font-weight: 600; }}
 
-QLabel#status_running {{
-    color: {c['accent']};
-    font-weight: 600;
-}}
-
-QLabel#status_done {{
-    color: {c['score_high']};
-    font-weight: 600;
-}}
-
-QLabel#status_error {{
-    color: {c['score_low']};
-    font-weight: 600;
-}}
-
-QLabel#status_stopped {{
-    color: {c['score_mid']};
-    font-weight: 600;
-}}
-
-/* ====== Status Bar ====== */
+/* ══ Status bar ══════════════════════════════════════════════════════════════*/
 QStatusBar {{
     background: {c['bg_header']};
     color: {c['text_secondary']};
     border-top: 1px solid {c['border']};
-}}
-
-/* ====== Tooltip ====== */
-QToolTip {{
-    background: {c['text_primary']};
-    color: #ffffff;
-    border: none;
-    padding: 4px 8px;
-    border-radius: 3px;
     font-size: 12px;
 }}
 
-/* ====== Checkbox ====== */
-QCheckBox {{
-    color: {c['text_primary']};
+/* ══ Tooltip ═════════════════════════════════════════════════════════════════*/
+QToolTip {{
+    background: {c['text_primary']};
+    color: #FFFFFF;
+    border: none;
+    padding: 5px 9px;
+    border-radius: 4px;
+    font-size: 12px;
 }}
+
+/* ══ Checkbox ════════════════════════════════════════════════════════════════*/
+QCheckBox {{ color: {c['text_primary']}; spacing: 6px; }}
 
 QCheckBox::indicator {{
     width: 16px;
     height: 16px;
-    border: 1px solid {c['border_soft']};
+    border: 1px solid {c['border']};
     border-radius: 3px;
     background: {c['bg_input']};
 }}
@@ -335,47 +381,44 @@ QCheckBox::indicator:checked {{
     border-color: {c['accent']};
 }}
 
-/* ====== List Widget ====== */
+/* ══ List widget ═════════════════════════════════════════════════════════════*/
 QListWidget {{
     background: {c['bg_surface']};
     color: {c['text_primary']};
-    border: 1px solid {c['border_soft']};
+    border: 1px solid {c['border']};
+    border-radius: 4px;
 }}
 
-/* ====== Splitter ====== */
+QListWidget::item:selected {{
+    background: {c['accent_light']};
+}}
+
+/* ══ Splitter ════════════════════════════════════════════════════════════════*/
 QSplitter::handle {{
-    background: {c['border_soft']};
+    background: {c['border']};
 }}
 
-/* ====== Menu ====== */
-QMenuBar {{
-    background: {c['bg_header']};
-    color: {c['text_primary']};
-    border-bottom: 1px solid {c['border_soft']};
+/* ══ Scroll area ═════════════════════════════════════════════════════════════*/
+QScrollArea {{
+    border: none;
+    background: transparent;
 }}
 
-QMenuBar::item:selected {{
+/* ══ Action bar (pinned dugmad pri dnu tabova) ═══════════════════════════════*/
+QWidget#action_bar {{
     background: {c['bg_surface']};
-}}
-
-QMenu {{
-    background: {c['bg_surface']};
-    color: {c['text_primary']};
-    border: 1px solid {c['border_soft']};
-}}
-
-QMenu::item:selected {{
-    background: {c['accent']};
+    border-top: 1px solid {c['border']};
+    padding: 6px 0px;
 }}
 """
 
 
 def apply_theme(app: QApplication) -> None:
     """
-    Apply the light analytical theme stylesheet to the entire application.
+    Primjenjuje Soft Sage & Deep Blue temu na cijelu aplikaciju.
 
     Args:
-        app: QApplication instance to apply the theme to.
+        app: QApplication instanca.
     """
     app.setStyle("Fusion")
     app.setStyleSheet(build_stylesheet())

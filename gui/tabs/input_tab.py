@@ -77,48 +77,66 @@ class InputTab(QWidget):
         self._connect_signals()
 
     def _setup_ui(self):
-        """Set up the UI components."""
-        # Outer layout: scroll area + pinned action bar
+        """Set up the UI components — dvostupni layout (lijevo: unos, desno: opcije)."""
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # --- Scrollable content ---
+        # ── Jedan scroll area koji obuhvata oba stupca ────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setSpacing(10)
-        layout.setContentsMargins(8, 8, 8, 8)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(10, 10, 10, 10)
+        content_layout.setSpacing(0)
 
-        # Create tab widget for input methods
+        # ── Dva stupca unutar scrolla ─────────────────────────────────────────
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
+        columns.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # ── Lijeva kolona ─────────────────────────────────────────────────────
+        left_col = QWidget()
+        left_layout = QVBoxLayout(left_col)
+        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
         self.input_tabs = QTabWidget()
-
         sitemap_widget = self._create_sitemap_input()
-        self.input_tabs.addTab(sitemap_widget, "Sitemap")
-
+        self.input_tabs.addTab(sitemap_widget, "Sitemap")  # "Sitemap"
         url_list_widget = self._create_url_list_input()
-        self.input_tabs.addTab(url_list_widget, "URL List")
-
-        layout.addWidget(self.input_tabs)
-
-        run_options = self._create_run_options()
-        layout.addWidget(run_options)
-
-        advanced = self._create_advanced_settings()
-        layout.addWidget(advanced)
+        self.input_tabs.addTab(url_list_widget, "Lista URL-ova")  # "URL List"
+        left_layout.addWidget(self.input_tabs)
 
         self.url_summary = self._create_url_summary()
-        layout.addWidget(self.url_summary)
+        left_layout.addWidget(self.url_summary)
 
-        layout.addStretch()
+        columns.addWidget(left_col, 55)
 
+        # ── Desna kolona ──────────────────────────────────────────────────────
+        right_col = QWidget()
+        right_layout = QVBoxLayout(right_col)
+        right_layout.setSpacing(10)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        run_options = self._create_run_options()
+        right_layout.addWidget(run_options)
+
+        advanced = self._create_advanced_settings()
+        advanced.setChecked(True)  # Napredne postavke vidljive po defaultu
+        right_layout.addWidget(advanced)
+
+        columns.addWidget(right_col, 45)
+
+        content_layout.addLayout(columns)
         scroll.setWidget(content)
-        outer.addWidget(scroll)
+        outer.addWidget(scroll, 1)
 
-        # --- Pinned action bar (always visible) ---
+        # ── Pinned action bar ─────────────────────────────────────────────────
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
         separator.setFrameShadow(QFrame.Shadow.Sunken)
@@ -131,8 +149,9 @@ class InputTab(QWidget):
         """Create sitemap/domain input widget."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 4)
 
-        group = QGroupBox("Sitemap Input")
+        group = QGroupBox("Sitemap unos")  # "Sitemap Input"
         form = QFormLayout(group)
 
         # Sitemap URL
@@ -143,14 +162,14 @@ class InputTab(QWidget):
         # Domain
         self.domain_input = QLineEdit()
         self.domain_input.setPlaceholderText("https://example.com")
-        form.addRow("Domain:", self.domain_input)
+        form.addRow("Domen:", self.domain_input)  # "Domain:"
 
         # Buttons row
         buttons = QHBoxLayout()
-        self.discover_btn = QPushButton("Auto-Discover")
-        self.discover_btn.setToolTip("Discover sitemap from domain or robots.txt")
-        self.load_sitemap_btn = QPushButton("Load Sitemap")
-        self.load_sitemap_btn.setToolTip("Load and parse sitemap URL")
+        self.discover_btn = QPushButton("Auto-otkrivanje")  # "Auto-Discover"
+        self.discover_btn.setToolTip("Pronađi sitemap iz domena ili robots.txt")  # "Discover sitemap from domain or robots.txt"
+        self.load_sitemap_btn = QPushButton("Učitaj sitemap")  # "Load Sitemap"
+        self.load_sitemap_btn.setToolTip("Učitaj i parsiraj sitemap URL")  # "Load and parse sitemap URL"
         buttons.addWidget(self.discover_btn)
         buttons.addWidget(self.load_sitemap_btn)
         buttons.addStretch()
@@ -159,15 +178,20 @@ class InputTab(QWidget):
         # Custom URL patterns
         self.custom_patterns_input = QLineEdit()
         self.custom_patterns_input.setPlaceholderText(
-            "e.g. /oglas/, /listing/, /item/   (comma-separated, leave empty for defaults)"
+            # "e.g. /oglas/, /listing/, /item/   (comma-separated, leave empty for defaults)"
+            "npr. /oglas/, /listing/, /item/   (zarezom odvojeni, ostavi prazno za podrazumijevane)"
         )
         self.custom_patterns_input.setToolTip(
-            "Override built-in product URL patterns with your own.\n"
-            "Comma-separated substrings. A URL is kept if it contains any of them.\n"
-            "Example for OLX: /oglas/\n"
-            "Leave empty to use the built-in heuristics."
+            # "Override built-in product URL patterns with your own.\n"
+            # "Comma-separated substrings. A URL is kept if it contains any of them.\n"
+            # "Example for OLX: /oglas/\n"
+            # "Leave empty to use the built-in heuristics."
+            "Zamijeni ugrađene URL patterne vlastitima.\n"
+            "Zarezom odvojeni podnizovi. URL ostaje ako sadrži bilo koji od njih.\n"
+            "Primjer za OLX: /oglas/\n"
+            "Ostavi prazno za ugrađenu heuristiku."
         )
-        form.addRow("URL patterns:", self.custom_patterns_input)
+        form.addRow("URL patterne:", self.custom_patterns_input)  # "URL patterns:"
 
         # Status label
         self.sitemap_status_label = QLabel("")
@@ -183,28 +207,31 @@ class InputTab(QWidget):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        group = QGroupBox("URL List Input")
+        group = QGroupBox("Unos liste URL-ova")  # "URL List Input"
         form = QFormLayout(group)
 
         # File input row
         file_row = QHBoxLayout()
         self.urls_file_input = QLineEdit()
-        self.urls_file_input.setPlaceholderText("Path to .txt or .csv file")
-        self.browse_btn = QPushButton("Browse...")
+        self.urls_file_input.setPlaceholderText("Putanja do .txt ili .csv fajla")  # "Path to .txt or .csv file"
+        self.browse_btn = QPushButton("Pregledaj...")  # "Browse..."
         file_row.addWidget(self.urls_file_input)
         file_row.addWidget(self.browse_btn)
-        form.addRow("From File:", file_row)
+        form.addRow("Iz fajla:", file_row)  # "From File:"
 
         # Manual input
-        form.addRow("Or Manual Entry:", None)
+        form.addRow("Ili ručni unos:", None)  # "Or Manual Entry:"
         self.manual_urls_edit = QPlainTextEdit()
-        self.manual_urls_edit.setPlaceholderText("Enter URLs (one per line)\ne.g., https://example.com/product/1")
+        self.manual_urls_edit.setPlaceholderText(
+            # "Enter URLs (one per line)\ne.g., https://example.com/product/1"
+            "Unesi URL-ove (jedan po redu)\nnpr. https://example.com/product/1"
+        )
         self.manual_urls_edit.setMinimumHeight(150)
         form.addRow("", self.manual_urls_edit)
 
         # Append/Replace options
         options_row = QHBoxLayout()
-        self.append_checkbox = QCheckBox("Append to existing URLs")
+        self.append_checkbox = QCheckBox("Dodaj na postojeće URL-ove")  # "Append to existing URLs"
         options_row.addWidget(self.append_checkbox)
         options_row.addStretch()
         form.addRow("", options_row)
@@ -214,14 +241,14 @@ class InputTab(QWidget):
 
     def _create_run_options(self) -> QGroupBox:
         """Create run options group."""
-        group = QGroupBox("Run Options")
+        group = QGroupBox("Opcije pokretanja")  # "Run Options"
         form = QFormLayout(group)
 
         # Max URLs
         self.max_urls_input = QLineEdit()
-        self.max_urls_input.setPlaceholderText("Leave empty for unlimited")
+        self.max_urls_input.setPlaceholderText("Ostavi prazno za neograničeno")  # "Leave empty for unlimited"
         self.max_urls_input.setValidator(QIntValidator(1, 999999, self))
-        form.addRow("Max URLs:", self.max_urls_input)
+        form.addRow("Max URL-ova:", self.max_urls_input)  # "Max URLs:"
 
         # Delay
         delay_layout = QHBoxLayout()
@@ -231,7 +258,7 @@ class InputTab(QWidget):
         self.delay_spin.setSuffix(" s")
         delay_layout.addWidget(self.delay_spin)
         delay_layout.addStretch()
-        form.addRow("Delay:", delay_layout)
+        form.addRow("Pauza:", delay_layout)  # "Delay:"
 
         # Parallel workers
         workers_layout = QHBoxLayout()
@@ -239,18 +266,22 @@ class InputTab(QWidget):
         self.max_workers_spin.setRange(1, 32)
         self.max_workers_spin.setValue(DEFAULT_MAX_WORKERS)
         self.max_workers_spin.setToolTip(
-            "Number of parallel HTTP threads. Higher = faster but more load on the server."
+            # "Number of parallel HTTP threads. Higher = faster but more load on the server."
+            "Broj paralelnih HTTP niti. Više = brže, ali veće opterećenje servera."
         )
         workers_layout.addWidget(self.max_workers_spin)
         workers_layout.addStretch()
-        form.addRow("Workers:", workers_layout)
+        form.addRow("Radni procesi:", workers_layout)  # "Workers:"
 
         # Playwright
-        self.use_playwright_cb = QCheckBox("Use Playwright (JS-rendered pages)")
+        self.use_playwright_cb = QCheckBox("Koristi Playwright (JS stranice)")  # "Use Playwright (JS-rendered pages)"
         self.use_playwright_cb.setToolTip(
-            "Render pages with a headless browser so JavaScript content is visible.\n"
-            "Requires: pip install playwright && playwright install chromium\n"
-            "Forces single-threaded mode (workers setting is ignored)."
+            # "Render pages with a headless browser so JavaScript content is visible.\n"
+            # "Requires: pip install playwright && playwright install chromium\n"
+            # "Forces single-threaded mode (workers setting is ignored)."
+            "Renderuj stranice headless browserom kako bi JavaScript sadržaj bio vidljiv.\n"
+            "Zahtijeva: pip install playwright && playwright install chromium\n"
+            "Forsira sekvencijalni mod (postavka radnih procesa se ignoriše)."
         )
         self.use_playwright_cb.stateChanged.connect(self._on_playwright_toggled)
         form.addRow("", self.use_playwright_cb)
@@ -259,10 +290,10 @@ class InputTab(QWidget):
         output_row = QHBoxLayout()
         self.output_dir_input = QLineEdit()
         self.output_dir_input.setPlaceholderText("outputs/")
-        self.output_dir_btn = QPushButton("Browse...")
+        self.output_dir_btn = QPushButton("Pregledaj...")  # "Browse..."
         output_row.addWidget(self.output_dir_input)
         output_row.addWidget(self.output_dir_btn)
-        form.addRow("Output Dir:", output_row)
+        form.addRow("Izlazni dir.:", output_row)  # "Output Dir:"
 
         # Error label
         self.run_options_error = QLabel("")
@@ -273,13 +304,13 @@ class InputTab(QWidget):
 
     def _create_advanced_settings(self) -> QGroupBox:
         """Create collapsible Advanced Settings group (scoring weights + resume)."""
-        group = QGroupBox("Advanced Settings")
+        group = QGroupBox("Napredne postavke")  # "Advanced Settings"
         group.setCheckable(True)
         group.setChecked(False)  # collapsed by default
         form = QFormLayout(group)
 
         # --- Score weights ---
-        weights_label = QLabel("Score weights (auto-normalised to 100%)")
+        weights_label = QLabel("Težine ocjena (auto-normalizirano na 100%)")  # "Score weights (auto-normalised to 100%)"
         weights_label.setStyleSheet("color: #888; font-size: 11px;")
         form.addRow(weights_label)
 
@@ -288,8 +319,8 @@ class InputTab(QWidget):
         self.catalog_weight_spin.setSingleStep(0.05)
         self.catalog_weight_spin.setDecimals(2)
         self.catalog_weight_spin.setValue(DEFAULT_CATALOG_WEIGHT)
-        self.catalog_weight_spin.setToolTip("HTML quality: title, H1, meta, breadcrumb, price text")
-        form.addRow("Catalog weight:", self.catalog_weight_spin)
+        self.catalog_weight_spin.setToolTip("HTML kvalitet: naslov, H1, meta, breadcrumb, tekst cijene")  # "HTML quality: title, H1, meta, breadcrumb, price text"
+        form.addRow("Težina kataloga:", self.catalog_weight_spin)  # "Catalog weight:"
 
         self.machine_weight_spin = QDoubleSpinBox()
         self.machine_weight_spin.setRange(0.01, 1.0)
@@ -297,58 +328,60 @@ class InputTab(QWidget):
         self.machine_weight_spin.setDecimals(2)
         self.machine_weight_spin.setValue(DEFAULT_MACHINE_WEIGHT)
         self.machine_weight_spin.setToolTip("Schema.org, SKU, GTIN, canonical, noindex")
-        form.addRow("Machine weight:", self.machine_weight_spin)
+        form.addRow("Težina mašine:", self.machine_weight_spin)  # "Machine weight:"
 
         self.commerce_weight_spin = QDoubleSpinBox()
         self.commerce_weight_spin.setRange(0.01, 1.0)
         self.commerce_weight_spin.setSingleStep(0.05)
         self.commerce_weight_spin.setDecimals(2)
         self.commerce_weight_spin.setValue(DEFAULT_COMMERCE_WEIGHT)
-        self.commerce_weight_spin.setToolTip("Price, images, shipping, returns, description quality")
-        form.addRow("Commerce weight:", self.commerce_weight_spin)
+        self.commerce_weight_spin.setToolTip("Cijena, slike, dostava, povrati, kvalitet opisa")  # "Price, images, shipping, returns, description quality"
+        form.addRow("Težina commerce:", self.commerce_weight_spin)  # "Commerce weight:"
 
         self.agent_ready_threshold_spin = QSpinBox()
         self.agent_ready_threshold_spin.setRange(0, 100)
         self.agent_ready_threshold_spin.setValue(DEFAULT_AGENT_READY_THRESHOLD)
         self.agent_ready_threshold_spin.setToolTip(
-            "Minimum overall_score for a product to be flagged agent_ready=True"
+            # "Minimum overall_score for a product to be flagged agent_ready=True"
+            "Minimalni overall_score da bi proizvod bio označen agent_ready=True"
         )
-        form.addRow("Agent-ready threshold:", self.agent_ready_threshold_spin)
+        form.addRow("Prag agent-ready:", self.agent_ready_threshold_spin)  # "Agent-ready threshold:"
 
         # --- Resume from checkpoint ---
-        resume_separator = QLabel("Resume")
+        resume_separator = QLabel("Nastavak")  # "Resume"
         resume_separator.setStyleSheet("color: #888; font-size: 11px; margin-top: 6px;")
         form.addRow(resume_separator)
 
-        self.resume_cb = QCheckBox("Resume from previous run")
+        self.resume_cb = QCheckBox("Nastavi od prethodnog pokretanja")  # "Resume from previous run"
         self.resume_cb.setToolTip(
-            "Skip the fetch phase by reusing pages cached in a previous run's output folder."
+            # "Skip the fetch phase by reusing pages cached in a previous run's output folder."
+            "Preskoči fazu preuzimanja koristeći stranice keširane u prethodnom izlaznom folderu."
         )
         self.resume_cb.stateChanged.connect(self._on_resume_toggled)
         form.addRow("", self.resume_cb)
 
         resume_row = QHBoxLayout()
         self.resume_dir_input = QLineEdit()
-        self.resume_dir_input.setPlaceholderText("Path to previous output dir")
+        self.resume_dir_input.setPlaceholderText("Putanja do prethodnog izlaznog direktorija")  # "Path to previous output dir"
         self.resume_dir_input.setEnabled(False)
-        self.resume_dir_btn = QPushButton("Browse...")
+        self.resume_dir_btn = QPushButton("Pregledaj...")  # "Browse..."
         self.resume_dir_btn.setEnabled(False)
         self.resume_dir_btn.clicked.connect(self._on_resume_dir_browse_clicked)
         resume_row.addWidget(self.resume_dir_input)
         resume_row.addWidget(self.resume_dir_btn)
-        form.addRow("Checkpoint dir:", resume_row)
+        form.addRow("Checkpoint dir.:", resume_row)  # "Checkpoint dir:"
 
         return group
 
     def _create_url_summary(self) -> QGroupBox:
         """Create URL summary group with preview list."""
-        group = QGroupBox("URL Summary")
+        group = QGroupBox("Pregled URL-ova")  # "URL Summary"
         layout = QVBoxLayout(group)
 
         # Stats row
         stats_layout = QHBoxLayout()
-        self.total_urls_label = QLabel("Total: 0")
-        self.valid_urls_label = QLabel("Valid: 0")
+        self.total_urls_label = QLabel("Ukupno: 0")  # "Total: 0"
+        self.valid_urls_label = QLabel("Ispravnih: 0")  # "Valid: 0"
         self.warning_label = QLabel("")
         self.warning_label.setStyleSheet("color: #f57c00;")
         stats_layout.addWidget(self.total_urls_label)
@@ -358,7 +391,7 @@ class InputTab(QWidget):
         layout.addLayout(stats_layout)
 
         # Preview list
-        preview_label = QLabel("Preview (first 10):")
+        preview_label = QLabel("Pregled (prvih 10):")  # "Preview (first 10):"
         layout.addWidget(preview_label)
         self.url_preview_list = QListWidget()
         self.url_preview_list.setMaximumHeight(150)
@@ -372,18 +405,18 @@ class InputTab(QWidget):
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.start_scan_btn = QPushButton("Start Scan")
+        self.start_scan_btn = QPushButton("Pokreni skeniranje")  # "Start Scan"
         self.start_scan_btn.setObjectName("primary")
         self.start_scan_btn.setDefault(True)
         self.start_scan_btn.setEnabled(False)
 
-        self.clear_btn = QPushButton("Clear List")
-        self.export_btn = QPushButton("Export URL List")
+        self.clear_btn = QPushButton("Obriši listu")  # "Clear List"
+        self.export_btn = QPushButton("Izvezi listu URL-ova")  # "Export URL List"
 
-        layout.addWidget(self.start_scan_btn)
         layout.addWidget(self.clear_btn)
         layout.addWidget(self.export_btn)
         layout.addStretch()
+        layout.addWidget(self.start_scan_btn)  # Desna strana action bar-a
 
         return widget
 
@@ -426,8 +459,8 @@ class InputTab(QWidget):
         self.domain_input.setText(self._settings.value("input/domain", ""))
         self.output_dir_input.setText(self._settings.value("input/output_dir", "outputs/"))
 
-        max_urls = self._settings.value("input/max_urls", "")
-        self.max_urls_input.setText(max_urls if max_urls else "")
+        max_urls = self._settings.value("input/max_urls", "50")
+        self.max_urls_input.setText(max_urls if max_urls else "50")
 
         delay = self._settings.value("input/delay", 1)
         self.delay_spin.setValue(int(delay))
@@ -483,18 +516,18 @@ class InputTab(QWidget):
         has_file = bool(urls_file)
 
         if not (has_sitemap or has_domain or has_manual or has_file):
-            return False, "Please provide at least one input source"
+            return False, "Unesite barem jedan izvor URL-ova"  # "Please provide at least one input source"
 
         # Validate URLs start with http/https
         if sitemap_url and not self._is_valid_url(sitemap_url):
-            return False, "Sitemap URL must start with http:// or https://"
+            return False, "Sitemap URL mora početi sa http:// ili https://"  # "Sitemap URL must start with http:// or https://"
 
         if domain and not self._is_valid_url(domain):
-            return False, "Domain must start with http:// or https://"
+            return False, "Domen mora početi sa http:// ili https://"  # "Domain must start with http:// or https://"
 
         # Validate output directory
         if not output_dir:
-            return False, "Output directory is required"
+            return False, "Izlazni direktorijum je obavezan"  # "Output directory is required"
 
         return True, ""
 
@@ -526,21 +559,21 @@ class InputTab(QWidget):
         """Handle auto-discover button click."""
         domain = self.domain_input.text().strip()
         if not domain:
-            self._set_sitemap_status("Enter domain first", "error")
+            self._set_sitemap_status("Prvo unesite domen", "error")  # "Enter domain first"
             return
 
         if not self._is_valid_url(domain):
-            self._set_sitemap_status("Domain must start with http:// or https://", "error")
+            self._set_sitemap_status("Domen mora početi sa http:// ili https://", "error")  # "Domain must start with http:// or https://"
             return
 
-        self._set_sitemap_status("Discovering sitemap...", "info")
+        self._set_sitemap_status("Tražim sitemap...", "info")  # "Discovering sitemap..."
         self.discover_btn.setEnabled(False)
         self.audit_controller.discover_sitemap(domain)
 
     def _on_sitemap_discovered(self, url: str):
         """Handle successful sitemap autodiscover."""
         self.discover_btn.setEnabled(True)
-        self._set_sitemap_status(f"Found: {url}", "success")
+        self._set_sitemap_status(f"Pronađeno: {url}", "success")  # "Found: {url}"
         self.sitemap_url_input.setText(url)
 
     def _on_sitemap_discover_failed(self, message: str):
@@ -566,17 +599,17 @@ class InputTab(QWidget):
         sitemap_url = self.sitemap_url_input.text().strip()
         
         if not sitemap_url:
-            self.sitemap_status_label.setText("Enter sitemap URL first")
+            self.sitemap_status_label.setText("Prvo unesite sitemap URL")  # "Enter sitemap URL first"
             self.sitemap_status_label.setStyleSheet("color: #C96A5A;")
             return
 
         if not self._is_valid_url(sitemap_url):
-            self.sitemap_status_label.setText("URL must start with http:// or https://")
+            self.sitemap_status_label.setText("URL mora početi sa http:// ili https://")  # "URL must start with http:// or https://"
             self.sitemap_status_label.setStyleSheet("color: #C96A5A;")
             return
 
         # Loading state
-        self.sitemap_status_label.setText("Loading sitemap...")
+        self.sitemap_status_label.setText("Učitavam sitemap...")  # "Loading sitemap..."
         self.sitemap_status_label.setStyleSheet("color: #8A94A6;")
         self.load_sitemap_btn.setEnabled(False)
 
@@ -629,7 +662,7 @@ class InputTab(QWidget):
         """Handle browse button click."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select URL List File",
+            "Odaberi fajl sa listom URL-ova",  # "Select URL List File"
             "",
             "Text Files (*.txt *.csv);;All Files (*)"
         )
@@ -652,7 +685,7 @@ class InputTab(QWidget):
             self._update_url_summary()
             self._validate_and_update()  # aktivira Start Scan dugme
         except Exception as e:
-            self.sitemap_status_label.setText(f"Error loading file: {str(e)}")
+            self.sitemap_status_label.setText(f"Greška pri učitavanju fajla: {str(e)}")  # "Error loading file: {e}"
             self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
 
     def _on_playwright_toggled(self, state: int):
@@ -672,7 +705,7 @@ class InputTab(QWidget):
         """Handle resume directory browse click."""
         dir_path = QFileDialog.getExistingDirectory(
             self,
-            "Select Previous Output Directory",
+            "Odaberi prethodni izlazni direktorijum",  # "Select Previous Output Directory"
             self.resume_dir_input.text() or "outputs/",
         )
         if dir_path:
@@ -682,7 +715,7 @@ class InputTab(QWidget):
         """Handle output directory browse click."""
         dir_path = QFileDialog.getExistingDirectory(
             self,
-            "Select Output Directory",
+            "Odaberi izlazni direktorijum",  # "Select Output Directory"
             self.output_dir_input.text() or "outputs/"
         )
 
@@ -696,7 +729,7 @@ class InputTab(QWidget):
             return
 
         if not self._collected_urls:
-            self.run_options_error.setText("No URLs to scan")
+            self.run_options_error.setText("Nema URL-ova za skeniranje")  # "No URLs to scan"
             return
 
         # Save state
@@ -736,19 +769,19 @@ class InputTab(QWidget):
         self._collected_urls = []
         self._update_url_summary()
         self.start_scan_btn.setEnabled(False)
-        self.sitemap_status_label.setText("Cleared")
+        self.sitemap_status_label.setText("Obrisano")  # "Cleared"
         self.sitemap_status_label.setStyleSheet("color: #666;")
 
     def _on_export_clicked(self):
         """Handle export button click."""
         if not self._collected_urls:
-            self.sitemap_status_label.setText("No URLs to export")
+            self.sitemap_status_label.setText("Nema URL-ova za izvoz")  # "No URLs to export"
             self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export URL List",
+            "Izvezi listu URL-ova",  # "Export URL List"
             "urls_export.txt",
             "Text Files (*.txt);;All Files (*)"
         )
@@ -757,10 +790,10 @@ class InputTab(QWidget):
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write('\n'.join(self._collected_urls))
-                self.sitemap_status_label.setText(f"Exported {len(self._collected_urls)} URLs")
+                self.sitemap_status_label.setText(f"Izvezeno {len(self._collected_urls)} URL-ova")  # "Exported {n} URLs"
                 self.sitemap_status_label.setStyleSheet("color: #388e3c;")
             except Exception as e:
-                self.sitemap_status_label.setText(f"Export error: {str(e)}")
+                self.sitemap_status_label.setText(f"Greška pri izvozu: {str(e)}")  # "Export error: {e}"
                 self.sitemap_status_label.setStyleSheet("color: #d32f2f;")
 
     def _update_url_summary(self):
@@ -779,11 +812,11 @@ class InputTab(QWidget):
 
         # Total
         total = len(urls)
-        self.total_urls_label.setText(f"Total: {total}")
+        self.total_urls_label.setText(f"Ukupno: {total}")  # "Total: {total}"
 
         # Valid URLs (simple filter)
         valid = len([u for u in urls if self._is_valid_url(u)])
-        self.valid_urls_label.setText(f"Valid: {valid}")
+        self.valid_urls_label.setText(f"Ispravnih: {valid}")  # "Valid: {valid}"
 
         # Update preview list
         self.url_preview_list.clear()
@@ -793,6 +826,6 @@ class InputTab(QWidget):
 
         # Warning
         if valid < total and total > 0:
-            self.warning_label.setText(f"Warning: {total - valid} URLs invalid")
+            self.warning_label.setText(f"Upozorenje: {total - valid} URL-ova neispravno")  # "Warning: {n} URLs invalid"
         else:
             self.warning_label.setText("")

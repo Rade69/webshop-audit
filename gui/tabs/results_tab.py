@@ -5,8 +5,9 @@ Responsibility: Working screen for viewing, filtering, and analyzing
 audit results. Shows table with scores, details panel, and actions.
 """
 import csv
+import os
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSlot, QSortFilterProxyModel, QUrl
+from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSlot, QSortFilterProxyModel, QUrl, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -55,13 +56,13 @@ class ResultsTableModel(QAbstractTableModel):
             "review_status"
         ]
         self._headers = [
-            "Title",
-            "Catalog",
-            "Machine",
-            "Commerce",
-            "Overall",
-            "Flags",
-            "Review"
+            "Naslov",     # "Title"
+            "Katalog",    # "Catalog"
+            "Mašina",     # "Machine"
+            "Commerce",   # "Commerce"
+            "Ukupno",     # "Overall"
+            "Oznake",     # "Flags"
+            "Revizija"    # "Review"
         ]
 
     def update_data(self, data):
@@ -91,7 +92,7 @@ class ResultsTableModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.DisplayRole:
             if col_name == "title":
-                title = product.get("title", product.get("url", ""))
+                title = str(product.get("title", "") or product.get("url", "") or "")
                 return title[:50] + "..." if len(title) > 50 else title
             elif col_name in ["catalog_score", "machine_score", "commerce_score", "overall_score"]:
                 return product.get(col_name, "-")
@@ -235,6 +236,24 @@ class ResultsFilterModel(QSortFilterProxyModel):
         return True
 
 
+class _ReportWorker(QThread):
+    """Pozadinski thread za generisanje Word izvještaja — ne blokira GUI."""
+    finished = pyqtSignal(str)   # report_path
+    failed   = pyqtSignal(str)   # error message
+
+    def __init__(self, output_dir: str):
+        super().__init__()
+        self.output_dir = output_dir
+
+    def run(self):
+        try:
+            from audit.report_generator import generate_report
+            path = generate_report(self.output_dir)
+            self.finished.emit(path)
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
 class ResultsTab(QWidget):
     """
     Results tab for displaying audit results.
@@ -265,99 +284,115 @@ class ResultsTab(QWidget):
     def _setup_ui(self):
         """Set up UI components."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
 
-        # Filter bar
+        # Filter bar — u GroupBox-u
+        filter_group = QGroupBox("Filteri")  # "Filters"
+        filter_group_layout = QVBoxLayout(filter_group)
+        filter_group_layout.setContentsMargins(8, 8, 8, 8)
+        filter_group_layout.setSpacing(0)
         filter_bar = self._create_filter_bar()
-        layout.addWidget(filter_bar)
+        filter_group_layout.addWidget(filter_bar)
+        layout.addWidget(filter_group)
 
-        # Main content: table + details
+        # Splitter: tabela + detalji panel
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Table view
         table_container = self._create_table_view()
         splitter.addWidget(table_container)
 
-        # Details panel
         details_panel = self._create_details_panel()
         splitter.addWidget(details_panel)
 
-        splitter.setSizes([600, 300])
-        layout.addWidget(splitter)
+        splitter.setSizes([650, 400])
+        layout.addWidget(splitter, 1)  # stretch — popuni ostatak prostora
 
         # Action buttons
         actions = self._create_actions()
         layout.addWidget(actions)
 
     def _create_filter_bar(self) -> QWidget:
-        """Create filter bar widget."""
+        """Create filter bar widget — dva reda."""
         widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
+        main_layout = QVBoxLayout(widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(6)
 
-        # Category dropdown
-        layout.addWidget(QLabel("Category:"))
+        # ── Red 1: kategorija, ocjena, checkboxovi ────────────────────────────
+        row1 = QHBoxLayout()
+        row1.setSpacing(12)
+
+        row1.addWidget(QLabel("Kategorija:"))  # "Category:"
         self.category_combo = QComboBox()
-        self.category_combo.addItem("All", "")
+        self.category_combo.addItem("Sve", "")  # "All"
         self.category_combo.currentTextChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.category_combo)
+        self.category_combo.setFixedWidth(130)
+        row1.addWidget(self.category_combo)
 
-        # Score range
-        layout.addWidget(QLabel("Score:"))
+        row1.addWidget(QLabel("Ocjena:"))  # "Score:"
         self.min_score_spin = QSpinBox()
         self.min_score_spin.setRange(0, 100)
         self.min_score_spin.setValue(0)
         self.min_score_spin.setPrefix("Min: ")
+        self.min_score_spin.setFixedWidth(80)
         self.min_score_spin.valueChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.min_score_spin)
+        row1.addWidget(self.min_score_spin)
 
         self.max_score_spin = QSpinBox()
         self.max_score_spin.setRange(0, 100)
         self.max_score_spin.setValue(100)
         self.max_score_spin.setPrefix("Max: ")
+        self.max_score_spin.setFixedWidth(80)
         self.max_score_spin.valueChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.max_score_spin)
+        row1.addWidget(self.max_score_spin)
 
-        # Checkboxes
-        self.missing_schema_cb = QCheckBox("Missing Schema")
+        row1.addStretch()
+
+        row1.addWidget(QLabel("Pretraga:"))  # "Search:"
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("URL, naslov, SKU, GTIN...")
+        self.search_input.textChanged.connect(self._on_search_changed)
+        self.search_input.setMinimumWidth(220)
+        row1.addWidget(self.search_input)
+
+        self.reset_filters_btn = QPushButton("Resetuj")  # "Reset"
+        self.reset_filters_btn.clicked.connect(self._on_reset_filters)
+        row1.addWidget(self.reset_filters_btn)
+
+        main_layout.addLayout(row1)
+
+        # ── Red 2: checkbox filteri ───────────────────────────────────────────
+        row2 = QHBoxLayout()
+        row2.setSpacing(16)
+
+        self.missing_schema_cb = QCheckBox("Nema sheme")  # "Missing Schema"
         self.missing_schema_cb.stateChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.missing_schema_cb)
+        row2.addWidget(self.missing_schema_cb)
 
-        self.missing_price_cb = QCheckBox("Missing Price")
+        self.missing_price_cb = QCheckBox("Nema cijene")  # "Missing Price"
         self.missing_price_cb.stateChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.missing_price_cb)
+        row2.addWidget(self.missing_price_cb)
 
         self.noindex_cb = QCheckBox("Noindex")
         self.noindex_cb.stateChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.noindex_cb)
+        row2.addWidget(self.noindex_cb)
 
-        self.canonical_cb = QCheckBox("Canonical Issues")
+        self.canonical_cb = QCheckBox("Problem canonical")  # "Canonical Issues"
         self.canonical_cb.stateChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.canonical_cb)
+        row2.addWidget(self.canonical_cb)
 
-        self.shortlist_cb = QCheckBox("Shortlist Only")
+        self.shortlist_cb = QCheckBox("Samo kratka lista")  # "Shortlist Only"
         self.shortlist_cb.stateChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.shortlist_cb)
+        row2.addWidget(self.shortlist_cb)
 
-        self.show_non_product_cb = QCheckBox("Show Non-Product")
+        self.show_non_product_cb = QCheckBox("Prikaži ne-proizvode")  # "Show Non-Product"
         self.show_non_product_cb.setChecked(True)
         self.show_non_product_cb.stateChanged.connect(self._on_filter_changed)
-        layout.addWidget(self.show_non_product_cb)
+        row2.addWidget(self.show_non_product_cb)
 
-        layout.addStretch()
-
-        # Search
-        layout.addWidget(QLabel("Search:"))
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("URL, title, SKU, GTIN...")
-        self.search_input.textChanged.connect(self._on_search_changed)
-        self.search_input.setMinimumWidth(200)
-        layout.addWidget(self.search_input)
-
-        # Reset button
-        self.reset_filters_btn = QPushButton("Reset")
-        self.reset_filters_btn.clicked.connect(self._on_reset_filters)
-        layout.addWidget(self.reset_filters_btn)
+        row2.addStretch()
+        main_layout.addLayout(row2)
 
         return widget
 
@@ -401,7 +436,7 @@ class ResultsTab(QWidget):
         layout.addWidget(self.table_view)
 
         # Count label
-        self.count_label = QLabel("0 products")
+        self.count_label = QLabel("0 proizvoda")  # "0 products"
         layout.addWidget(self.count_label)
 
         return container
@@ -416,7 +451,7 @@ class ResultsTab(QWidget):
         layout = QVBoxLayout(container)
 
         # Page info section
-        page_group = QGroupBox("Page Info")
+        page_group = QGroupBox("Informacije o stranici")  # "Page Info"
         page_layout = QFormLayout(page_group)
         self.detail_url = QLabel("-")
         self.detail_url.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
@@ -425,14 +460,14 @@ class ResultsTab(QWidget):
         self.detail_canonical = QLabel("-")
         self.detail_robots = QLabel("-")
         page_layout.addRow("URL:", self.detail_url)
-        page_layout.addRow("Title:", self.detail_title)
+        page_layout.addRow("Naslov:", self.detail_title)  # "Title:"
         page_layout.addRow("H1:", self.detail_h1)
         page_layout.addRow("Canonical:", self.detail_canonical)
         page_layout.addRow("Robots:", self.detail_robots)
         layout.addWidget(page_group)
 
         # Schema section
-        schema_group = QGroupBox("Schema")
+        schema_group = QGroupBox("Shema")  # "Schema"
         schema_layout = QFormLayout(schema_group)
         self.detail_schema_product = QLabel("-")
         self.detail_schema_offer = QLabel("-")
@@ -442,36 +477,36 @@ class ResultsTab(QWidget):
         self.detail_sku = QLabel("-")
         self.detail_gtin = QLabel("-")
         self.detail_brand = QLabel("-")
-        schema_layout.addRow("Product:", self.detail_schema_product)
-        schema_layout.addRow("Offer:", self.detail_schema_offer)
-        schema_layout.addRow("Price:", self.detail_price_schema)
-        schema_layout.addRow("Currency:", self.detail_currency)
-        schema_layout.addRow("Availability:", self.detail_availability)
+        schema_layout.addRow("Proizvod:", self.detail_schema_product)  # "Product:"
+        schema_layout.addRow("Ponuda:", self.detail_schema_offer)  # "Offer:"
+        schema_layout.addRow("Cijena:", self.detail_price_schema)  # "Price:"
+        schema_layout.addRow("Valuta:", self.detail_currency)  # "Currency:"
+        schema_layout.addRow("Dostupnost:", self.detail_availability)  # "Availability:"
         schema_layout.addRow("SKU:", self.detail_sku)
         schema_layout.addRow("GTIN:", self.detail_gtin)
-        schema_layout.addRow("Brand:", self.detail_brand)
+        schema_layout.addRow("Brend:", self.detail_brand)  # "Brand:"
         layout.addWidget(schema_group)
 
         # Signals section
-        signals_group = QGroupBox("Signals")
+        signals_group = QGroupBox("Signali")  # "Signals"
         signals_layout = QFormLayout(signals_group)
         self.detail_price_html = QLabel("-")
         self.detail_shipping = QLabel("-")
         self.detail_returns = QLabel("-")
         self.detail_images = QLabel("-")
         self.detail_text_length = QLabel("-")
-        signals_layout.addRow("HTML Price:", self.detail_price_html)
-        signals_layout.addRow("Shipping:", self.detail_shipping)
-        signals_layout.addRow("Returns:", self.detail_returns)
-        signals_layout.addRow("Images:", self.detail_images)
-        signals_layout.addRow("Text Length:", self.detail_text_length)
+        signals_layout.addRow("HTML cijena:", self.detail_price_html)  # "HTML Price:"
+        signals_layout.addRow("Dostava:", self.detail_shipping)  # "Shipping:"
+        signals_layout.addRow("Povrati:", self.detail_returns)  # "Returns:"
+        signals_layout.addRow("Slike:", self.detail_images)  # "Images:"
+        signals_layout.addRow("Dužina teksta:", self.detail_text_length)  # "Text Length:"
         layout.addWidget(signals_group)
 
         # Flags section
-        flags_group = QGroupBox("Flags")
+        flags_group = QGroupBox("Oznake")  # "Flags"
         flags_layout = QFormLayout(flags_group)
         self.detail_flags = QLabel("-")
-        flags_layout.addRow("Issues:", self.detail_flags)
+        flags_layout.addRow("Problemi:", self.detail_flags)  # "Issues:"
         layout.addWidget(flags_group)
 
         layout.addStretch()
@@ -482,25 +517,33 @@ class ResultsTab(QWidget):
     def _create_actions(self) -> QWidget:
         """Create action buttons widget."""
         widget = QWidget()
+        widget.setObjectName("action_bar")
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.open_page_btn = QPushButton("Open Page")
+        self.open_page_btn = QPushButton("Otvori stranicu")  # "Open Page"
         self.open_page_btn.setEnabled(False)
         self.open_page_btn.clicked.connect(self._on_open_page)
 
-        self.mark_review_btn = QPushButton("Mark for Manual Review")
+        self.mark_review_btn = QPushButton("Označi za ručnu reviziju")  # "Mark for Manual Review"
         self.mark_review_btn.setEnabled(False)
         self.mark_review_btn.clicked.connect(self._on_mark_review)
 
-        self.export_btn = QPushButton("Export Selected")
+        self.export_btn = QPushButton("Izvezi odabrano")  # "Export Selected"
         self.export_btn.setEnabled(False)
         self.export_btn.clicked.connect(self._on_export)
+
+        self.report_btn = QPushButton("Generiši izvještaj")  # "Generate Report"
+        self.report_btn.setObjectName("primary")
+        self.report_btn.setEnabled(False)
+        self.report_btn.setToolTip("Generiše Word (.docx) izvještaj iz trenutnih rezultata")
+        self.report_btn.clicked.connect(self._on_generate_report)
 
         layout.addWidget(self.open_page_btn)
         layout.addWidget(self.mark_review_btn)
         layout.addWidget(self.export_btn)
         layout.addStretch()
+        layout.addWidget(self.report_btn)
 
         return widget
 
@@ -547,7 +590,7 @@ class ResultsTab(QWidget):
 
     def _update_count(self, count: int):
         """Update product count label."""
-        self.count_label.setText(f"{count} products")
+        self.count_label.setText(f"{count} proizvoda")  # "{count} products"
 
     def _on_results_loaded(self):
         """Handle results loaded signal."""
@@ -555,13 +598,14 @@ class ResultsTab(QWidget):
         self.table_model.update_data(df.to_dict('records'))
         self._update_count(len(df))
 
-        # Enable export as soon as data is loaded (selection not required)
+        # Enable export and report as soon as data is loaded
         self.export_btn.setEnabled(True)
+        self.report_btn.setEnabled(True)
 
         # Update category dropdown
         categories = self.results_controller.get_categories()
         self.category_combo.clear()
-        self.category_combo.addItem("All", "")
+        self.category_combo.addItem("Sve", "")  # "All"
         for cat in categories:
             self.category_combo.addItem(cat, cat)
 
@@ -626,36 +670,62 @@ class ResultsTab(QWidget):
         self.detail_canonical.setText(str(product.get("canonical", "-")))
         self.detail_robots.setText(str(product.get("robots_meta", "-")))
 
-        # Schema
-        self.detail_schema_product.setText("Yes" if product.get("schema_product") else "No")
-        self.detail_schema_offer.setText("Yes" if product.get("schema_offer") else "No")
-        self.detail_price_schema.setText(str(product.get("price_schema", "not found")))
-        self.detail_currency.setText(str(product.get("currency", "-")))
-        self.detail_availability.setText(str(product.get("availability", "-")))
-        self.detail_sku.setText(str(product.get("sku", "-")))
-        self.detail_gtin.setText(str(product.get("gtin", "-")))
-        self.detail_brand.setText(str(product.get("brand", "-")))
+        def _yn(val) -> str:
+            """Pretvara truthy vrijednost u Da/Ne, ignorira pandas NaN/None."""
+            if val is None:
+                return "Ne"
+            try:
+                import math
+                if isinstance(val, float) and math.isnan(val):
+                    return "Ne"
+            except Exception:
+                pass
+            return "Da" if val else "Ne"
 
-        # Signals
-        self.detail_price_html.setText(str(product.get("price_html", "not found")))
-        self.detail_shipping.setText("Yes" if product.get("has_shipping") else "No")
-        self.detail_returns.setText("Yes" if product.get("has_returns") else "No")
-        self.detail_images.setText(str(product.get("image_count", 0)))
-        self.detail_text_length.setText(str(product.get("text_length", 0)))
+        def _val(key, default="-") -> str:
+            v = product.get(key)
+            if v is None:
+                return default
+            try:
+                import math
+                if isinstance(v, float) and math.isnan(v):
+                    return default
+            except Exception:
+                pass
+            s = str(v).strip()
+            return s if s and s.lower() != "nan" else default
 
-        # Flags
+        # Schema — ispravna imena kolona iz extractor.py
+        self.detail_schema_product.setText(_yn(product.get("schema_product_present")))
+        self.detail_schema_offer.setText(_yn(product.get("schema_offer_present")))
+        self.detail_price_schema.setText(_val("schema_price", "nije pronađeno"))
+        self.detail_currency.setText(_val("schema_currency"))
+        self.detail_availability.setText(_val("schema_availability"))
+        self.detail_sku.setText(_val("schema_sku"))
+        self.detail_gtin.setText(_val("schema_gtin"))
+        self.detail_brand.setText(_val("schema_brand"))
+
+        # Signals — ispravna imena kolona
+        self.detail_price_html.setText(_val("html_price_text", "nije pronađeno"))
+        self.detail_shipping.setText(_yn(product.get("shipping_signal")))
+        self.detail_returns.setText(_yn(product.get("returns_signal")))
+        self.detail_images.setText(_val("image_count", "0"))
+        self.detail_text_length.setText(_val("visible_text_length", "0"))
+
+        # Flags — iz indexability_flags kolone i boolean signala
         flags = []
-        if product.get("flag_js_rendered"):
-            flags.append("JS Rendered")
-        if product.get("flag_noindex"):
+        if product.get("is_likely_js_rendered"):
+            flags.append("JS renderovano")
+        idx_flags = _val("indexability_flags", "")
+        if "noindex" in idx_flags.lower():
             flags.append("Noindex")
-        if product.get("flag_canonical_missing"):
-            flags.append("No Canonical")
-        if product.get("missing_price"):
-            flags.append("Missing Price")
-        if product.get("missing_schema"):
-            flags.append("Missing Schema")
-        self.detail_flags.setText(", ".join(flags) if flags else "None")
+        if "canonical" in idx_flags.lower():
+            flags.append("Canonical mismatch")
+        if not product.get("schema_product_present"):
+            flags.append("Nema sheme")
+        if not product.get("schema_price") and _val("schema_price", "") == "-":
+            flags.append("Nema cijene u schema")
+        self.detail_flags.setText(", ".join(flags) if flags else "Nema")
 
     def _on_open_page(self):
         """Open selected page in browser."""
@@ -671,12 +741,12 @@ class ResultsTab(QWidget):
         """Export currently visible (filtered) rows to CSV."""
         row_count = self.filter_model.rowCount()
         if not row_count:
-            QMessageBox.information(self, "Export", "No rows to export.")
+            QMessageBox.information(self, "Izvoz", "Nema redova za izvoz.")  # "Export", "No rows to export."
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Filtered Results",
+            "Izvezi filtrirane rezultate",  # "Export Filtered Results"
             "results_filtered.csv",
             "CSV Files (*.csv);;All Files (*)",
         )
@@ -698,7 +768,39 @@ class ResultsTab(QWidget):
                     writer.writeheader()
                     writer.writerows(rows)
             QMessageBox.information(
-                self, "Export", f"Exported {len(rows)} rows to:\n{file_path}"
+                self, "Izvoz", f"Izvezeno {len(rows)} redova u:\n{file_path}"  # "Export", "Exported {n} rows to:\n{path}"
             )
         except OSError as e:
-            QMessageBox.critical(self, "Export Error", str(e))
+            QMessageBox.critical(self, "Greška pri izvozu", str(e))  # "Export Error"
+
+    def _on_generate_report(self):
+        """Pokreće generisanje Word izvještaja u pozadinskom threadu."""
+        output_dir = self.results_controller.get_output_dir()
+        if not output_dir:
+            QMessageBox.warning(self, "Izvještaj", "Nema učitanih rezultata.")
+            return
+
+        self.report_btn.setEnabled(False)
+        self.report_btn.setText("Generišem...")
+
+        self._report_worker = _ReportWorker(output_dir)
+        self._report_worker.finished.connect(self._on_report_finished)
+        self._report_worker.failed.connect(self._on_report_failed)
+        self._report_worker.start()
+
+    def _on_report_finished(self, report_path: str):
+        self.report_btn.setEnabled(True)
+        self.report_btn.setText("Generiši izvještaj")
+        QMessageBox.information(
+            self,
+            "Izvještaj generisan",
+            f"Word izvještaj sačuvan:\n{report_path}",
+        )
+        # Otvori folder koji sadrži izvještaj
+        folder = os.path.dirname(os.path.abspath(report_path))
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+
+    def _on_report_failed(self, error: str):
+        self.report_btn.setEnabled(True)
+        self.report_btn.setText("Generiši izvještaj")
+        QMessageBox.critical(self, "Greška pri generisanju", error)

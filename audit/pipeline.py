@@ -6,6 +6,7 @@ za progress i log poruke. Koristi se i iz CLI-ja i iz GUI-a.
 """
 import json
 import os
+import threading
 import time
 from datetime import datetime
 from typing import Callable, Optional
@@ -35,7 +36,8 @@ from config import (
 def run_audit(
     config: dict,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
-    log_callback: Optional[Callable[[str, str], None]] = None
+    log_callback: Optional[Callable[[str, str], None]] = None,
+    stop_event: Optional[threading.Event] = None,
 ) -> dict:
     """
     Pokreće cijeli audit pipeline.
@@ -123,9 +125,23 @@ def run_audit(
         sitemap_url = _discover_sitemap(domain, log_callback)
         if not sitemap_url:
             raise RuntimeError("Could not find sitemap")
-        urls = collect_urls_from_sitemap(sitemap_url, max_urls=max_urls)
+        all_urls = collect_urls_from_sitemap(sitemap_url)
+        urls, used_fallback = filter_product_like_urls(all_urls)
+        if used_fallback:
+            log("warning", f"No product URL patterns matched — using all {len(urls)} URLs (may include categories)")
+        else:
+            log("info", f"URL filter: kept {len(urls)} product-like URLs out of {len(all_urls)} total")
+        if max_urls:
+            urls = urls[:max_urls]
     elif sitemap_url:
-        urls = collect_urls_from_sitemap(sitemap_url, max_urls=max_urls)
+        all_urls = collect_urls_from_sitemap(sitemap_url)
+        urls, used_fallback = filter_product_like_urls(all_urls)
+        if used_fallback:
+            log("warning", f"No product URL patterns matched — using all {len(urls)} URLs (may include categories)")
+        else:
+            log("info", f"URL filter: kept {len(urls)} product-like URLs out of {len(all_urls)} total")
+        if max_urls:
+            urls = urls[:max_urls]
     else:
         raise ValueError("Must provide input_file, domain, or sitemap_url")
 
@@ -164,6 +180,7 @@ def run_audit(
             max_workers=max_workers,
             use_playwright=use_playwright,
             progress_callback=_fetch_progress,
+            stop_event=stop_event,
         )
 
         # Persist checkpoint so this run can be resumed if it's interrupted later

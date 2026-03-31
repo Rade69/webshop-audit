@@ -4,7 +4,7 @@ Run tab for displaying audit progress.
 Responsibility: Real-time display of scan progress, statistics, logs,
 and run controls during audit execution.
 """
-from PyQt6.QtCore import QUrl, QTimer, pyqtSlot
+from PyQt6.QtCore import QUrl, QTimer, pyqtSlot, Qt
 from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtWidgets import (
     QWidget,
@@ -42,6 +42,7 @@ class RunTab(QWidget):
         self.audit_controller = audit_controller
         self._output_dir: str = ""
         self._start_time: float = 0.0
+        self._stopped_early: bool = False
 
         # UI setup
         self._setup_ui()
@@ -51,6 +52,7 @@ class RunTab(QWidget):
     def _setup_ui(self):
         """Set up the UI components."""
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(10)
 
         # Status header
@@ -77,12 +79,12 @@ class RunTab(QWidget):
 
     def _create_status_header(self) -> QGroupBox:
         """Create status header group."""
-        group = QGroupBox("Run Status")
+        group = QGroupBox("Status pokretanja")  # "Run Status"
         layout = QHBoxLayout(group)
         layout.setContentsMargins(8, 6, 8, 6)
 
         # Status label
-        self.status_label = QLabel("Idle")
+        self.status_label = QLabel("U mirovanju")  # "Idle"
         self.status_label.setObjectName("status_idle")
         layout.addWidget(self.status_label)
 
@@ -97,7 +99,7 @@ class RunTab(QWidget):
 
     def _create_stats_group(self) -> QGroupBox:
         """Create statistics group."""
-        group = QGroupBox("Statistics")
+        group = QGroupBox("Statistike")  # "Statistics"
         layout = QHBoxLayout(group)
 
         # Left column
@@ -105,9 +107,9 @@ class RunTab(QWidget):
         self.total_urls_value = QLabel("-")
         self.processed_value = QLabel("-")
         self.errors_value = QLabel("-")
-        left_form.addRow("Total URLs:", self.total_urls_value)
-        left_form.addRow("Processed:", self.processed_value)
-        left_form.addRow("Errors:", self.errors_value)
+        left_form.addRow("Ukupno URL-ova:", self.total_urls_value)  # "Total URLs:"
+        left_form.addRow("Obrađeno:", self.processed_value)  # "Processed:"
+        left_form.addRow("Greške:", self.errors_value)  # "Errors:"
         layout.addLayout(left_form)
 
         # Right column
@@ -115,23 +117,29 @@ class RunTab(QWidget):
         self.non_product_value = QLabel("-")
         self.candidates_value = QLabel("-")
         self.elapsed_value = QLabel("-")
-        right_form.addRow("Non-product:", self.non_product_value)
-        right_form.addRow("Candidates:", self.candidates_value)
-        right_form.addRow("Elapsed:", self.elapsed_value)
+        right_form.addRow("Nije proizvod:", self.non_product_value)  # "Non-product:"
+        right_form.addRow("Kandidati:", self.candidates_value)  # "Candidates:"
+        right_form.addRow("Proteklo:", self.elapsed_value)  # "Elapsed:"
         layout.addLayout(right_form)
 
         layout.addStretch()
+
+        self._empty_hint = QLabel("Pokrenite skeniranje iz taba Unos da biste vidjeli statistike.")
+        self._empty_hint.setStyleSheet("color: #9CA3AF; font-style: italic; font-size: 12px;")
+        self._empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._empty_hint)
 
         return group
 
     def _create_log_group(self) -> QGroupBox:
         """Create live log panel group."""
-        group = QGroupBox("Live Log")
+        group = QGroupBox("Živi log")  # "Live Log"
         layout = QVBoxLayout(group)
 
         self.log_view = QPlainTextEdit()
+        self.log_view.setObjectName("log_panel")
         self.log_view.setReadOnly(True)
-        self.log_view.setPlaceholderText("Run will start when you click Start Scan.")
+        self.log_view.setPlaceholderText("Pokretanje počinje klikom na Pokreni skeniranje.")  # "Run will start when you click Start Scan."
         layout.addWidget(self.log_view)
 
         return group
@@ -139,18 +147,19 @@ class RunTab(QWidget):
     def _create_actions(self) -> QWidget:
         """Create action buttons widget."""
         widget = QWidget()
+        widget.setObjectName("action_bar")
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.stop_btn = QPushButton("Stop")
+        self.stop_btn = QPushButton("Zaustavi")  # "Stop"
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self._on_stop_clicked)
 
-        self.pause_btn = QPushButton("Pause")
+        self.pause_btn = QPushButton("Pauziraj")  # "Pause"
         self.pause_btn.setEnabled(False)
-        self.pause_btn.setToolTip("Not supported in v1")
+        self.pause_btn.setToolTip("Nije podržano u v1")  # "Not supported in v1"
 
-        self.open_output_btn = QPushButton("Open Output Folder")
+        self.open_output_btn = QPushButton("Otvori izlazni folder")  # "Open Output Folder"
         self.open_output_btn.setEnabled(False)
         self.open_output_btn.clicked.connect(self._on_open_output_clicked)
 
@@ -173,8 +182,8 @@ class RunTab(QWidget):
 
     def _set_idle_state(self):
         """Set UI to idle state."""
-        self.status_label.setText("Idle")
-        self.status_label.setStyleSheet("font-weight: bold; color: #666;")
+        self.status_label.setText("U mirovanju")  # "Idle"
+        self.status_label.setStyleSheet("font-weight: bold; color: #4B5563;")
         self.phase_label.setText("-")
 
         self.progress_bar.setRange(0, 0)  # Indeterminate
@@ -190,11 +199,12 @@ class RunTab(QWidget):
         self.stop_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
         self.open_output_btn.setEnabled(False)
+        self._empty_hint.show()
 
     def _set_running_state(self):
         """Set UI to running state."""
-        self.status_label.setText("Running")
-        self.status_label.setStyleSheet("font-weight: bold; color: #1976d2;")
+        self.status_label.setText("U toku")  # "Running"
+        self.status_label.setStyleSheet("font-weight: bold; color: #26629E;")
 
         self.stop_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)  # Not supported
@@ -202,8 +212,8 @@ class RunTab(QWidget):
 
     def _set_completed_state(self):
         """Set UI to completed state."""
-        self.status_label.setText("Completed")
-        self.status_label.setStyleSheet("font-weight: bold; color: #388e3c;")
+        self.status_label.setText("Završeno")  # "Completed"
+        self.status_label.setStyleSheet("font-weight: bold; color: #2E7D32;")
 
         self.stop_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
@@ -211,8 +221,8 @@ class RunTab(QWidget):
 
     def _set_failed_state(self, error: str):
         """Set UI to failed state."""
-        self.status_label.setText("Failed")
-        self.status_label.setStyleSheet("font-weight: bold; color: #d32f2f;")
+        self.status_label.setText("Neuspješno")  # "Failed"
+        self.status_label.setStyleSheet("font-weight: bold; color: #B53A3A;")
 
         self.stop_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
@@ -222,8 +232,8 @@ class RunTab(QWidget):
 
     def _set_stopped_state(self):
         """Set UI to stopped state."""
-        self.status_label.setText("Stopped")
-        self.status_label.setStyleSheet("font-weight: bold; color: #f57c00;")
+        self.status_label.setText("Zaustavljeno")  # "Stopped"
+        self.status_label.setStyleSheet("font-weight: bold; color: #FF8C00;")
 
         self.stop_btn.setEnabled(False)
         self.pause_btn.setEnabled(False)
@@ -233,9 +243,9 @@ class RunTab(QWidget):
         """Append message to log with color formatting."""
         # Color mapping
         colors = {
-            "info": "#212121",
-            "warning": "#f57c00",
-            "error": "#d32f2f"
+            "info":    "#1A1D21",
+            "warning": "#FF8C00",
+            "error":   "#B53A3A"
         }
 
         # Create text format
@@ -262,13 +272,13 @@ class RunTab(QWidget):
     def _phase_display_name(self, phase: str) -> str:
         """Convert phase code to display name."""
         phase_map = {
-            "url_collection": "URL Collection",
-            "fetch": "Fetch",
-            "parse": "Parse HTML",
-            "score": "Score",
-            "shortlist": "Shortlist",
-            "export": "Export",
-            "done": "Done"
+            "url_collection": "Prikupljanje URL-ova",  # "URL Collection"
+            "fetch": "Preuzimanje",  # "Fetch"
+            "parse": "Parsiranje HTML-a",  # "Parse HTML"
+            "score": "Bodovanje",  # "Score"
+            "shortlist": "Kratka lista",  # "Shortlist"
+            "export": "Izvoz",  # "Export"
+            "done": "Završeno"  # "Done"
         }
         return phase_map.get(phase, phase)
 
@@ -279,9 +289,10 @@ class RunTab(QWidget):
         """Handle run started signal."""
         import time
         self._start_time = time.time()
+        self._stopped_early = False
         self.log_view.clear()
         self._set_running_state()
-        self._append_log("[INFO] Starting scan...", "info")
+        self._append_log("[INFO] Pokretanje skeniranja...", "info")  # "[INFO] Starting scan..."
 
         # Start elapsed time timer
         self._elapsed_timer = QTimer(self)
@@ -332,21 +343,24 @@ class RunTab(QWidget):
         self.errors_value.setText(str(stats.get("errors", "-")))
         self.non_product_value.setText(str(stats.get("non_product", "-")))
         self.candidates_value.setText(str(stats.get("candidates", "-")))
+        self._empty_hint.hide()
+        if stats.get("stopped_early"):
+            self._stopped_early = True
 
     @pyqtSlot(str)
     def _on_run_completed(self, output_dir: str):
         """Handle run completed signal."""
         self._output_dir = output_dir
 
-        # Stop elapsed timer
         if hasattr(self, '_elapsed_timer'):
             self._elapsed_timer.stop()
 
-        # Check if stopped early
-        # (This would come from stats_updated, handled separately)
-
-        self._set_completed_state()
-        self._append_log(f"[INFO] Scan completed. Results saved to: {output_dir}", "info")
+        if self._stopped_early:
+            self._set_stopped_state()
+            self._append_log(f"[INFO] Zaustavljeno. Parcijalni rezultati sačuvani u: {output_dir}", "info")
+        else:
+            self._set_completed_state()
+            self._append_log(f"[INFO] Skeniranje završeno. Rezultati sačuvani u: {output_dir}", "info")
 
     @pyqtSlot(str)
     def _on_run_failed(self, error: str):
@@ -368,7 +382,7 @@ class RunTab(QWidget):
 
     def _on_stop_clicked(self):
         """Handle stop button click."""
-        self._append_log("[INFO] Stopping scan...", "info")
+        self._append_log("[INFO] Zaustavljam skeniranje...", "info")  # "[INFO] Stopping scan..."
         self.audit_controller.stop_run()
         # UI will update via run_completed signal
 

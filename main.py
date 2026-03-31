@@ -116,12 +116,14 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawTextHelpFormatter,
     )
 
-    source = parser.add_mutually_exclusive_group(required=True)
+    source = parser.add_mutually_exclusive_group(required=False)
     source.add_argument("--sitemap", metavar="URL", help="Direct URL to sitemap.xml")
     source.add_argument("--domain", metavar="URL", help="Shop domain — sitemap will be auto-discovered")
     source.add_argument("--urls-file", metavar="FILE", help="Path to .txt or .csv file with product URLs")
 
     parser.add_argument("--max-urls", type=int, default=None, help="Maximum number of URLs to process")
+    parser.add_argument("--generate-report", metavar="OUTPUT_DIR",
+                        help="Generate Word report from existing output dir (skips audit)")
     parser.add_argument(
         "--delay", type=float, default=DEFAULT_DELAY,
         help=f"Delay between requests in seconds (default: {DEFAULT_DELAY})"
@@ -139,6 +141,18 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     args = parse_args()
+
+    # Standalone report generation
+    if hasattr(args, "generate_report") and args.generate_report:
+        from audit.report_generator import generate_report
+        path = generate_report(args.generate_report)
+        print(f"Izvještaj sačuvan: {path}")
+        return
+
+    if not args.sitemap and not args.domain and not getattr(args, "urls_file", None):
+        print("ERROR: Navedite --sitemap, --domain ili --urls-file (ili --generate-report).")
+        sys.exit(1)
+
     run_start = time.monotonic()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(args.output_dir, timestamp)

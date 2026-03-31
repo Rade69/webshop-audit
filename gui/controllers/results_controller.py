@@ -44,6 +44,10 @@ class ResultsController(QObject):
         """Vraća pandas DataFrame sa rezultatima."""
         return self._df
 
+    def get_output_dir(self) -> Optional[str]:
+        """Vraća putanju do output direktorija trenutnih rezultata."""
+        return self._output_dir
+
     def load_results(self, output_dir: str):
         """
         Učitava rezultate iz output direktorijuma.

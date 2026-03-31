@@ -4,6 +4,7 @@ Kontroler za pokretanje audit run-a.
 Odgovornost: Upravljanje AuditWorker-om i komunikacija sa UI-om.
 Ova klasa je jedini posrednik između backend pipeline-a i GUI-a.
 """
+import threading
 import time
 from typing import Optional
 
@@ -137,84 +138,69 @@ class AuditWorker(QThread):
         super().__init__()
         self.run_config = run_config
         self._stop_requested = False
+        self._stop_event = threading.Event()
 
     def request_stop(self):
         """
         Zahtijeva zaustavljanje workera.
-        
-        Worker će završiti trenutni URL i zatvoriti run.
+        Fetch petlja provjerava event između batcheva i staje.
         """
         self._stop_requested = True
+        self._stop_event.set()
 
     def run(self):
         """
         Glavna izvršna petlja workera.
-        
+
         Pokreće backend audit pipeline i emituje signale za svaki event.
         """
         start_time = time.time()
         output_dir = ""
-        
+
         try:
             self.phase_changed.emit("url_collection")
             self.log_message.emit("info", "Prikupljanje URL-ova...")
-            
-            # Kreiraj callback za progres
+
             def progress_callback(processed: int, total: int, phase: str):
-                if self._stop_requested:
-                    raise StopIteration("Stop requested")
-                
                 if phase:
                     self.phase_changed.emit(phase)
-                
                 self.progress_updated.emit(processed, total)
-                
-                # Ažuriraj statistike
                 self.stats_updated.emit({
                     "total": total,
                     "processed": processed,
-                    "errors": 0,  # Backend će ažurirati
+                    "errors": 0,
                     "candidates": 0
                 })
-            
-            # Kreiraj callback za log
+
             def log_callback(level: str, message: str):
                 self.log_message.emit(level, message)
-            
-            # Pokreni audit pipeline
+
             self.log_message.emit("info", "Pokretanje audit pipeline-a...")
-            
+
             result = run_audit(
                 config=self.run_config,
                 progress_callback=progress_callback,
-                log_callback=log_callback
+                log_callback=log_callback,
+                stop_event=self._stop_event,
             )
-            
+
             output_dir = result.get("output_dir", "")
-            
-            # Dodaj info ako je stopovan
+
             if self._stop_requested:
-                self.log_message.emit("info", "Run zaustavljen od strane korisnika")
+                self.log_message.emit("info", "Run zaustavljen — parcijalni rezultati sačuvani")
                 self.stats_updated.emit({
-                    "total": self.run_config.get("total_urls", 0),
+                    "total": result.get("total_urls", 0),
                     "processed": result.get("processed", 0),
                     "errors": result.get("errors", 0),
                     "candidates": result.get("candidates", 0),
                     "stopped_early": True
                 })
-            
+
             elapsed = time.time() - start_time
             self.log_message.emit("info", f"Run završen za {elapsed:.1f}s")
-            
             self.phase_changed.emit("done")
             self.run_completed.emit(output_dir)
-            
-        except StopIteration:
-            # StopRequested - vratimo parcijalne rezultate
-            self.log_message.emit("info", "Run zaustavljen - vraćam parcijalne rezultate")
-            self.phase_changed.emit("done")
-            self.run_completed.emit(output_dir or self.run_config.get("output_dir", ""))
-            
+
         except Exception as e:
             self.log_message.emit("error", f"Fatalna greška: {str(e)}")
             self.run_failed.emit(str(e))
