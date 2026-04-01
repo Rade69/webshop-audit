@@ -4,6 +4,7 @@ Review Queue tab for manual product review.
 Responsibility: Working screen for reviewing flagged products,
 managing notes, and setting review status.
 """
+import pandas as pd
 from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSlot, QUrl
 from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
@@ -89,9 +90,15 @@ class ReviewTableModel(QAbstractTableModel):
                 return severity_map.get(severity, severity)
             elif col_name == "reasons":
                 reasons = candidate.get("reasons", "")
-                if reasons:
+                # Handle NaN/None values
+                if pd.isna(reasons) or not reasons:
+                    return "-"
+                
+                # Convert to string if it's not already
+                reasons_str = str(reasons)
+                if reasons_str:
                     # Show first reason only in table
-                    first_reason = reasons.split(", ")[0]
+                    first_reason = reasons_str.split(", ")[0]
                     reason_map = {
                         "fetch-error": "Fetch greška",
                         "non-200": "Status nije 200",
@@ -540,8 +547,10 @@ class ReviewQueueTab(QWidget):
         if severity_display:
             reason_list.append(f"Prioritet: {severity_display}")
         
-        if reasons:
-            for reason in reasons.split(", "):
+        # Handle NaN/None values
+        if not pd.isna(reasons) and reasons:
+            reasons_str = str(reasons)
+            for reason in reasons_str.split(", "):
                 if reason in reason_map:
                     reason_list.append(reason_map[reason])
                 elif reason:
