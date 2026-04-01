@@ -93,9 +93,12 @@ class ShortlistCandidate:
             else:
                 reasons.append("js-rendered")
         
-        # Low priority - only if no other reasons
-        if not reasons and self.overall_score < 40:
-            reasons.append("low-score")
+        # LOW priority - ALWAYS include at least one reason
+        if self.severity == "LOW":
+            if self.overall_score < 40:
+                reasons.append("low-score")  # Actual problem
+            else:
+                reasons.append("sample-good-score")  # Benchmark sample
         
         return reasons
     

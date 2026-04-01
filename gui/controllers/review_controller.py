@@ -269,6 +269,7 @@ class ReviewController(QObject):
                 "missing-schema": "Missing Schema",
                 "low-content": "Low Content",
                 "low-score": "Low Score",
+                "sample-good-score": "Sample (Good Score)",
             }
             
             reason_str_clean = str(reason_str)

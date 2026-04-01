@@ -696,17 +696,37 @@ def generate_report(output_dir: str, log=None) -> str:
                 score = str(round(float(score_raw), 1)) if score_raw is not None and str(score_raw).lower() != "nan" else "-"
             except (ValueError, TypeError):
                 score = "-"
-            missing = _clean(row.get("missing_fields", "")) if "missing_fields" in cand_df.columns else "-"
+            # Use reasons column for human-readable reason
+            reasons_raw = _clean(row.get("reasons", "")) if "reasons" in cand_df.columns else "-"
             flags   = _clean(row.get("indexability_flags", "")) if "indexability_flags" in cand_df.columns else "-"
-            # Human-readable reason
+            
+            # Convert machine-readable reasons to human-readable
+            reason_map = {
+                "fetch-error": "Fetch Error",
+                "non-200": "Non-200 Status",
+                "not-product-page": "Not Product Page",
+                "js-rendered-high": "JS Rendered (High Risk)",
+                "js-rendered-medium": "JS Rendered (Medium Risk)",
+                "js-rendered": "JS Rendered",
+                "noindex": "Noindex",
+                "canonical-mismatch": "Canonical Mismatch",
+                "missing-price-critical": "Missing Price (Critical)",
+                "missing-schema-critical": "Missing Schema (Critical)",
+                "missing-price": "Missing Price",
+                "missing-schema": "Missing Schema",
+                "low-content": "Low Content",
+                "low-score": "Low Score",
+                "sample-good-score": "Sample (Good Score)",
+            }
+            
             parts = []
-            if missing != "-":
-                if "schema" in missing.lower():
-                    parts.append("Missing Schema")
-                if "price" in missing.lower():
-                    parts.append("Missing Price")
-                if not parts:
-                    parts.append(missing[:40])
+            if reasons_raw != "-" and reasons_raw:
+                for reason_code in reasons_raw.split(", "):
+                    if reason_code in reason_map:
+                        parts.append(reason_map[reason_code])
+                    elif reason_code:
+                        parts.append(reason_code)
+            
             reason = ", ".join(parts) if parts else "-"
             _add_table_row(t5, [url, score, reason, flags[:40]], alt=(i % 2 == 1), score_col=1)
 
