@@ -88,18 +88,26 @@ class MainWindow(QMainWindow):
         self.tab_widget.setTabPosition(QTabWidget.TabPosition.North)
 
         # Dodaj tabove
-        self.tab_widget.addTab(self.input_tab, "Input")
-        self.tab_widget.addTab(self.run_tab, "Run")
-        self.tab_widget.addTab(self.results_tab, "Results")
-        self.tab_widget.addTab(self.review_tab, "Review Queue")
+        self.tab_widget.addTab(self.input_tab, "Unos")          # "Input"
+        self.tab_widget.addTab(self.run_tab, "Pokretanje")       # "Run"
+        self.tab_widget.addTab(self.results_tab, "Rezultati")    # "Results"
+        self.tab_widget.addTab(self.review_tab, "Red za reviziju")  # "Review Queue"
 
         self.setCentralWidget(self.tab_widget)
 
     def _setup_status_bar(self):
-        """Postavlja status bar."""
+        """Postavlja status bar sa porukom lijevo i verzijom desno."""
+        import platform
+        from PyQt6.QtWidgets import QLabel
+
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready")
+        self.status_bar.showMessage("Spreman")  # "Ready"
+
+        # Desna strana: OS info (npr. "Fedora 43 2025.2.14")
+        os_label = QLabel(f"{platform.system()} {platform.release()}")
+        os_label.setStyleSheet("color: #4B5563; font-size: 12px; padding-right: 8px;")
+        self.status_bar.addPermanentWidget(os_label)
 
     def _connect_inter_tab_signals(self):
         """Povezuje signale između tabova i kontrolera."""
@@ -140,18 +148,18 @@ class MainWindow(QMainWindow):
         # Prebaci na Results tab
         self.tab_widget.setCurrentWidget(self.results_tab)
         
-        self.status_bar.showMessage(f"Completed — {output_dir}")
+        self.status_bar.showMessage(f"Završeno — {output_dir}")  # "Completed — {output_dir}"
 
     @pyqtSlot(str)
     def _on_run_failed(self, error: str):
         """Handler za grešku tokom run-a."""
-        self.status_bar.showMessage(f"Error: {error}")
+        self.status_bar.showMessage(f"Greška: {error}")  # "Error: {error}"
 
     @pyqtSlot(int, int)
     def _on_progress_updated(self, processed: int, total: int):
         """Handler za ažuriranje progressa."""
         if total > 0:
-            self.status_bar.showMessage(f"Scanning... {processed}/{total}")
+            self.status_bar.showMessage(f"Skeniranje... {processed}/{total}")  # "Scanning... {processed}/{total}"
 
     @pyqtSlot(str)
     def _on_phase_changed(self, phase: str):
@@ -181,4 +189,4 @@ class MainWindow(QMainWindow):
         # Switch to Run tab
         self.tab_widget.setCurrentWidget(self.run_tab)
         
-        self.status_bar.showMessage("Starting scan...")
+        self.status_bar.showMessage("Pokretanje skeniranja...")  # "Starting scan..."
