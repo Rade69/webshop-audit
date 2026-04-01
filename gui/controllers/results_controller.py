@@ -67,9 +67,9 @@ class ResultsController(QObject):
             self._state.filtered_count = len(self._df)
 
             # Extract categories from breadcrumb column
-            if "breadcrumb" in self._df.columns:
+            if "breadcrumb_text" in self._df.columns:
                 categories = set()
-                for val in self._df["breadcrumb"].dropna():
+                for val in self._df["breadcrumb_text"].dropna():
                     if isinstance(val, str):
                         parts = val.split(" > ")
                         categories.update(parts)
@@ -95,8 +95,8 @@ class ResultsController(QObject):
 
         # Apply filters
         if self._state.filter_category:
-            if "breadcrumb" in df.columns:
-                df = df[df["breadcrumb"].str.contains(self._state.filter_category, na=False)]
+            if "breadcrumb_text" in df.columns:
+                df = df[df["breadcrumb_text"].str.contains(self._state.filter_category, na=False)]
 
         if self._state.filter_min_score > 0:
             if "overall_score" in df.columns:
@@ -107,35 +107,35 @@ class ResultsController(QObject):
                 df = df[df["overall_score"] <= self._state.filter_max_score]
 
         if self._state.filter_missing_schema:
-            if "schema_product" in df.columns:
-                df = df[df["schema_product"] != True]
+            if "schema_product_present" in df.columns:
+                df = df[df["schema_product_present"] != True]
 
         if self._state.filter_missing_price:
-            if "price_html" in df.columns:
-                df = df[df["price_html"].isna()]
-            if "price_schema" in df.columns:
-                df = df[df["price_schema"].isna()]
+            if "html_price_text" in df.columns:
+                df = df[df["html_price_text"].isna()]
+            if "schema_price" in df.columns:
+                df = df[df["schema_price"].isna()]
 
         if self._state.filter_noindex:
-            if "robots_noindex" in df.columns:
-                df = df[df["robots_noindex"] == True]
+            if "flag_noindex" in df.columns:
+                df = df[df["flag_noindex"] == True]
 
         if self._state.filter_canonical_issues:
-            if "canonical_issue" in df.columns:
-                df = df[df["canonical_issue"] == True]
+            if "flag_canonical_mismatch" in df.columns:
+                df = df[df["flag_canonical_mismatch"] == True]
 
         if self._state.filter_shortlist_only:
             if "candidate" in df.columns:
                 df = df[df["candidate"] == True]
 
         if not self._state.filter_show_non_product:
-            if "is_product_page" in df.columns:
-                df = df[df["is_product_page"] != False]
+            if "is_likely_product_page" in df.columns:
+                df = df[df["is_likely_product_page"] != False]
 
         # Search filter
         if self._state.search_text:
             search = self._state.search_text.lower()
-            cols_to_search = ["url", "title", "sku", "gtin"]
+            cols_to_search = ["url", "title", "schema_sku", "schema_gtin"]
             mask = pd.Series([False] * len(df))
             for col in cols_to_search:
                 if col in df.columns:

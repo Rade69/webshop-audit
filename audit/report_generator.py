@@ -262,9 +262,9 @@ def _compute_stats(data: dict) -> dict:
         no_h1        = int(df["h1"].isna().sum()) if "h1" in df.columns else 0
         no_meta      = int(df["meta_description"].isna().sum()) if "meta_description" in df.columns else 0
         low_content  = int(df["suspicious_low_content"].sum()) if "suspicious_low_content" in df.columns else 0
-        no_price_html = int(df["html_price_found"].eq(False).sum()) if "html_price_found" in df.columns else 0
-        no_shipping  = int(df["shipping_info_found"].eq(False).sum()) if "shipping_info_found" in df.columns else 0
-        no_returns   = int(df["returns_info_found"].eq(False).sum()) if "returns_info_found" in df.columns else 0
+        no_price_html = int(df["html_price_text"].isna().sum()) if "html_price_text" in df.columns else 0
+        no_shipping  = int(df["shipping_signal"].eq(False).sum()) if "shipping_signal" in df.columns else 0
+        no_returns   = int(df["returns_signal"].eq(False).sum()) if "returns_signal" in df.columns else 0
         noindex      = int(df["indexability_flags"].str.contains("noindex", na=False).sum()) if "indexability_flags" in df.columns else 0
         canonical_mm = int(df["indexability_flags"].str.contains("canonical", na=False).sum()) if "indexability_flags" in df.columns else 0
     else:

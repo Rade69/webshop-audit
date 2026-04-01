@@ -242,19 +242,54 @@ class ReviewController(QObject):
     def get_reason(self, candidate: dict) -> str:
         """Get human-readable reason for queue entry."""
         reasons = []
-
-        if candidate.get("flag_noindex"):
-            reasons.append("Noindex")
-        if candidate.get("flag_canonical_missing"):
-            reasons.append("Canonical Mismatch")
-        if candidate.get("flag_js_rendered"):
-            reasons.append("JS Rendered")
-        if candidate.get("suspicious_schema_missing"):
-            reasons.append("Missing Schema")
-        if candidate.get("suspicious_price_missing"):
-            reasons.append("Missing Price")
-        if candidate.get("suspicious_low_content"):
-            reasons.append("Low Content")
+        
+        # Use new severity and reasons columns if available
+        severity = candidate.get("severity", "")
+        reason_str = candidate.get("reasons", "")
+        
+        if severity:
+            reasons.append(f"Severity: {severity}")
+        
+        if reason_str:
+            # Convert machine-readable reasons to human-readable
+            reason_map = {
+                "fetch-error": "Fetch Error",
+                "non-200": "Non-200 Status",
+                "not-product-page": "Not Product Page",
+                "js-rendered-high": "JS Rendered (High Risk)",
+                "js-rendered-medium": "JS Rendered (Medium Risk)",
+                "js-rendered": "JS Rendered",
+                "noindex": "Noindex",
+                "canonical-mismatch": "Canonical Mismatch",
+                "missing-price-critical": "Missing Price (Critical)",
+                "missing-schema-critical": "Missing Schema (Critical)",
+                "missing-price": "Missing Price",
+                "missing-schema": "Missing Schema",
+                "low-content": "Low Content",
+                "low-score": "Low Score",
+            }
+            
+            for reason in reason_str.split(", "):
+                if reason in reason_map:
+                    reasons.append(reason_map[reason])
+                elif reason:
+                    reasons.append(reason)
+        
+        # Fallback to old flags if new columns not available
+        if not reasons:
+            if candidate.get("flag_noindex"):
+                reasons.append("Noindex")
+            if candidate.get("flag_canonical_mismatch"):
+                reasons.append("Canonical Mismatch")
+            if candidate.get("flag_js_rendered"):
+                reasons.append("JS Rendered")
+            if candidate.get("suspicious_schema_missing"):
+                reasons.append("Missing Schema")
+            if candidate.get("suspicious_price_missing"):
+                reasons.append("Missing Price")
+            if candidate.get("suspicious_low_content"):
+                reasons.append("Low Content")
+        
         if candidate.get("added_by") == "manual":
             reasons.append("Manually Added")
 

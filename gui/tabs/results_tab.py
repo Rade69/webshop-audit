@@ -102,11 +102,11 @@ class ResultsTableModel(QAbstractTableModel):
                     flags.append("JS")
                 if product.get("flag_noindex"):
                     flags.append("noindex")
-                if product.get("flag_canonical_missing"):
+                if product.get("flag_canonical_mismatch"):
                     flags.append("no-canonical")
-                if product.get("missing_price"):
+                if product.get("suspicious_price_missing"):
                     flags.append("no-price")
-                if product.get("missing_schema"):
+                if product.get("suspicious_schema_missing"):
                     flags.append("no-schema")
                 return ", ".join(flags) if flags else "-"
             elif col_name == "review_status":
@@ -115,9 +115,9 @@ class ResultsTableModel(QAbstractTableModel):
         elif role == Qt.ItemDataRole.BackgroundRole:
             # Color coding based on issues
             has_critical = product.get("flag_noindex") or (
-                product.get("missing_price") and product.get("missing_schema")
+                product.get("suspicious_price_missing") and product.get("suspicious_schema_missing")
             )
-            has_warning = product.get("flag_js_rendered") or product.get("flag_canonical_missing")
+            has_warning = product.get("flag_js_rendered") or product.get("flag_canonical_mismatch")
 
             if has_critical:
                 return QColor("#ffebee")  # Light red
@@ -155,14 +155,14 @@ class ResultsFilterModel(QSortFilterProxyModel):
         self._filter_missing_schema = False
         self._filter_missing_price = False
         self._filter_noindex = False
-        self._filter_canonical_issues = False
+        self._filter_canonical_mismatch = False
         self._filter_shortlist_only = False
         self._show_non_product = True
         self._search_text = ""
         self._category = ""
 
     def set_filters(self, min_score=0, max_score=100, missing_schema=False,
-                    missing_price=False, noindex=False, canonical_issues=False,
+                    missing_price=False, noindex=False, canonical_mismatch=False,
                     shortlist_only=False, show_non_product=True, search_text="",
                     category=""):
         """Set filter parameters."""
@@ -171,7 +171,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
         self._filter_missing_schema = missing_schema
         self._filter_missing_price = missing_price
         self._filter_noindex = noindex
-        self._filter_canonical_issues = canonical_issues
+        self._filter_canonical_mismatch = canonical_mismatch
         self._filter_shortlist_only = shortlist_only
         self._show_non_product = show_non_product
         self._search_text = search_text.lower()
@@ -191,12 +191,12 @@ class ResultsFilterModel(QSortFilterProxyModel):
             return False
 
         # Missing schema filter
-        if self._filter_missing_schema and product.get("schema_product"):
+        if self._filter_missing_schema and product.get("schema_product_present"):
             return False
 
         # Missing price filter
         if self._filter_missing_price:
-            has_price = product.get("price_html") or product.get("price_schema")
+            has_price = product.get("html_price_text") or product.get("schema_price")
             if has_price:
                 return False
 
@@ -205,7 +205,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
             return False
 
         # Canonical issues filter
-        if self._filter_canonical_issues and not product.get("flag_canonical_missing"):
+        if self._filter_canonical_mismatch and not product.get("flag_canonical_mismatch"):
             return False
 
         # Shortlist only filter
@@ -213,12 +213,12 @@ class ResultsFilterModel(QSortFilterProxyModel):
             return False
 
         # Non-product filter
-        if not self._show_non_product and not product.get("is_product_page", True):
+        if not self._show_non_product and not product.get("is_likely_product_page", True):
             return False
 
         # Category filter
         if self._category:
-            breadcrumb = product.get("breadcrumb", "")
+            breadcrumb = product.get("breadcrumb_text", "")
             if self._category not in breadcrumb:
                 return False
 
@@ -227,8 +227,8 @@ class ResultsFilterModel(QSortFilterProxyModel):
             search_fields = [
                 str(product.get("url", "")),
                 str(product.get("title", "")),
-                str(product.get("sku", "")),
-                str(product.get("gtin", ""))
+                str(product.get("schema_sku", "")),
+                str(product.get("schema_gtin", ""))
             ]
             if not any(self._search_text in f.lower() for f in search_fields):
                 return False
@@ -617,7 +617,7 @@ class ResultsTab(QWidget):
             missing_schema=self.missing_schema_cb.isChecked(),
             missing_price=self.missing_price_cb.isChecked(),
             noindex=self.noindex_cb.isChecked(),
-            canonical_issues=self.canonical_cb.isChecked(),
+            canonical_mismatch=self.canonical_cb.isChecked(),
             shortlist_only=self.shortlist_cb.isChecked(),
             show_non_product=self.show_non_product_cb.isChecked(),
             search_text=self.search_input.text(),

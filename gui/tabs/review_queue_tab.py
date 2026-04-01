@@ -42,8 +42,8 @@ class ReviewTableModel(QAbstractTableModel):
     def __init__(self, data=None, parent=None):
         super().__init__(parent)
         self._data = data if data is not None else []
-        self._columns = ["url", "reason", "overall_score", "flags", "status", "has_note"]
-        self._headers = ["Product", "Reason", "Score", "Flags", "Status", "Note"]
+        self._columns = ["url", "severity", "reasons", "overall_score", "status", "has_note"]
+        self._headers = ["Proizvod", "Prioritet", "Razlozi", "Ocjena", "Status", "Bilješka"]  # "Product", "Severity", "Reasons", "Score", "Status", "Note"
 
     def update_data(self, data):
         """Update table data."""
@@ -72,23 +72,64 @@ class ReviewTableModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.DisplayRole:
             if col_name == "url":
-                url = candidate.get("url", "")
-                title = candidate.get("title", "")
+                url = str(candidate.get("url", "") or "")
+                title = str(candidate.get("title", "") or "")
                 if title:
                     return title[:40] + "..." if len(title) > 40 else title
                 return url[:40] + "..." if len(url) > 40 else url
-            elif col_name == "reason":
-                return candidate.get("reason_display", "-")
+            elif col_name == "severity":
+                severity = candidate.get("severity", "")
+                # Map severity to Serbian
+                severity_map = {
+                    "CRITICAL": "KRITIČNO",
+                    "HIGH": "VISOKO",
+                    "MEDIUM": "SREDNJE",
+                    "LOW": "NISKO"
+                }
+                return severity_map.get(severity, severity)
+            elif col_name == "reasons":
+                reasons = candidate.get("reasons", "")
+                if reasons:
+                    # Show first reason only in table
+                    first_reason = reasons.split(", ")[0]
+                    reason_map = {
+                        "fetch-error": "Fetch greška",
+                        "non-200": "Status nije 200",
+                        "not-product-page": "Nije produktna stranica",
+                        "js-rendered-high": "JS render (visok rizik)",
+                        "js-rendered-medium": "JS render (srednji rizik)",
+                        "js-rendered": "JS render",
+                        "noindex": "Noindex",
+                        "canonical-mismatch": "Canonical mismatch",
+                        "missing-price-critical": "Nema cijene (kritično)",
+                        "missing-schema-critical": "Nema sheme (kritično)",
+                        "missing-price": "Nema cijene",
+                        "missing-schema": "Nema sheme",
+                        "low-content": "Malo sadržaja",
+                        "low-score": "Nizak score",
+                    }
+                    return reason_map.get(first_reason, first_reason)
+                return "-"
             elif col_name == "overall_score":
                 return candidate.get("overall_score", "-")
-            elif col_name == "flags":
-                return candidate.get("flags", "-")
             elif col_name == "status":
                 return candidate.get("status", "pending")
             elif col_name == "has_note":
                 return "✓" if candidate.get("note") else "-"
 
         elif role == Qt.ItemDataRole.BackgroundRole:
+            # First priority: severity color
+            severity = candidate.get("severity", "")
+            if severity == "CRITICAL":
+                return QColor("#ffebee")  # Light red
+            elif severity == "HIGH":
+                return QColor("#fff3cd")  # Light orange
+            elif severity == "MEDIUM":
+                return QColor("#fff8e1")  # Light yellow
+            elif severity == "LOW":
+                return QColor("#e3f2fd")  # Light blue
+            
+            # Fallback: status color
             status = candidate.get("status", "pending")
             if status == "needs_fix":
                 return QColor("#ffebee")  # Light red
@@ -100,7 +141,7 @@ class ReviewTableModel(QAbstractTableModel):
                 return QColor("#fafafa")  # Light gray
 
         elif role == Qt.ItemDataRole.TextAlignmentRole:
-            if col_name in ["overall_score", "status", "has_note"]:
+            if col_name in ["severity", "overall_score", "status", "has_note"]:
                 return Qt.AlignmentFlag.AlignCenter
 
         return None
@@ -125,14 +166,14 @@ class NoteDialog(QDialog):
 
     def __init__(self, current_note: str = "", parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Add/Edit Note")
+        self.setWindowTitle("Dodaj/Uredi bilješku")  # "Add/Edit Note"
         self.setMinimumSize(400, 200)
 
         layout = QVBoxLayout(self)
 
         self.note_edit = QTextEdit()
         self.note_edit.setPlainText(current_note)
-        self.note_edit.setPlaceholderText("Enter note...")
+        self.note_edit.setPlaceholderText("Unesi bilješku...")  # "Enter note..."
         layout.addWidget(self.note_edit)
 
         buttons = QDialogButtonBox(
@@ -175,25 +216,29 @@ class ReviewQueueTab(QWidget):
     def _setup_ui(self):
         """Set up UI components."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
 
-        # Queue summary
+        # Pregled reda — u GroupBox-u
+        summary_group = QGroupBox("Pregled reda")  # "Queue Summary"
+        summary_group_layout = QVBoxLayout(summary_group)
+        summary_group_layout.setContentsMargins(8, 8, 8, 8)
+        summary_group_layout.setSpacing(0)
         summary = self._create_summary()
-        layout.addWidget(summary)
+        summary_group_layout.addWidget(summary)
+        layout.addWidget(summary_group)
 
-        # Main content: table + details
+        # Splitter: tabela + detalji panel
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Table view
         table_container = self._create_table_view()
         splitter.addWidget(table_container)
 
-        # Details panel
         details_panel = self._create_details_panel()
         splitter.addWidget(details_panel)
 
-        splitter.setSizes([600, 300])
-        layout.addWidget(splitter)
+        splitter.setSizes([650, 400])
+        layout.addWidget(splitter, 1)  # stretch — popuni ostatak prostora
 
         # Action buttons
         actions = self._create_actions()
@@ -205,36 +250,42 @@ class ReviewQueueTab(QWidget):
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        layout.addWidget(QLabel("<b>Queue Summary:</b>"))
+        layout.addWidget(QLabel("<b>Pregled reda:</b>"))  # "<b>Queue Summary:</b>"
 
-        self.total_label = QLabel("Total: 0")
-        self.total_label.setStyleSheet("padding: 2px 8px;")
+        self.total_label = QLabel("Ukupno: 0")  # "Total: 0"
         layout.addWidget(self.total_label)
 
-        self.pending_label = QLabel("Pending: 0")
-        self.pending_label.setStyleSheet("background: #fafafa; padding: 2px 8px;")
+        self.pending_label = QLabel("Na čekanju: 0")  # "Pending: 0"
+        self.pending_label.setStyleSheet(
+            "background: #F3F4F6; color: #4B5563; padding: 3px 10px; border-radius: 10px;"
+        )
         layout.addWidget(self.pending_label)
 
-        self.needs_fix_label = QLabel("Needs Fix: 0")
-        self.needs_fix_label.setStyleSheet("background: #ffebee; padding: 2px 8px;")
+        self.needs_fix_label = QLabel("Treba popravku: 0")  # "Needs Fix: 0"
+        self.needs_fix_label.setStyleSheet(
+            "background: #FEE2E2; color: #B53A3A; padding: 3px 10px; border-radius: 10px;"
+        )
         layout.addWidget(self.needs_fix_label)
 
-        self.reviewed_label = QLabel("Reviewed: 0")
-        self.reviewed_label.setStyleSheet("background: #e8f5e9; padding: 2px 8px;")
+        self.reviewed_label = QLabel("Pregledano: 0")  # "Reviewed: 0"
+        self.reviewed_label.setStyleSheet(
+            "background: #DCFCE7; color: #2E7D32; padding: 3px 10px; border-radius: 10px;"
+        )
         layout.addWidget(self.reviewed_label)
 
-        self.fixed_label = QLabel("Fixed: 0")
-        self.fixed_label.setStyleSheet("background: #e3f2fd; padding: 2px 8px;")
+        self.fixed_label = QLabel("Popravljeno: 0")  # "Fixed: 0"
+        self.fixed_label.setStyleSheet(
+            "background: #D8E5F0; color: #26629E; padding: 3px 10px; border-radius: 10px;"
+        )
         layout.addWidget(self.fixed_label)
 
-        self.manual_label = QLabel("Manual: 0")
-        self.manual_label.setStyleSheet("padding: 2px 8px;")
+        self.manual_label = QLabel("Ručno: 0")  # "Manual: 0"
         layout.addWidget(self.manual_label)
 
         layout.addStretch()
 
         self.all_reviewed_label = QLabel("")
-        self.all_reviewed_label.setStyleSheet("color: #388e3c; font-weight: bold;")
+        self.all_reviewed_label.setStyleSheet("color: #2E7D32; font-weight: bold;")
         layout.addWidget(self.all_reviewed_label)
 
         return widget
@@ -281,46 +332,50 @@ class ReviewQueueTab(QWidget):
         layout = QVBoxLayout(container)
 
         # Product info section
-        info_group = QGroupBox("Product Info")
+        info_group = QGroupBox("Informacije o proizvodu")  # "Product Info"
         info_layout = QFormLayout(info_group)
         self.detail_url = QLabel("-")
         self.detail_url.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         self.detail_title = QLabel("-")
         self.detail_score = QLabel("-")
         info_layout.addRow("URL:", self.detail_url)
-        info_layout.addRow("Title:", self.detail_title)
-        info_layout.addRow("Score:", self.detail_score)
+        info_layout.addRow("Naslov:", self.detail_title)  # "Title:"
+        info_layout.addRow("Ocjena:", self.detail_score)  # "Score:"
         layout.addWidget(info_group)
 
         # Reason section
-        reason_group = QGroupBox("Reason")
+        reason_group = QGroupBox("Razlog")  # "Reason"
         reason_layout = QFormLayout(reason_group)
         self.detail_reason = QLabel("-")
         self.detail_flags = QLabel("-")
-        reason_layout.addRow("Reasons:", self.detail_reason)
-        reason_layout.addRow("Flags:", self.detail_flags)
+        reason_layout.addRow("Razlozi:", self.detail_reason)  # "Reasons:"
+        reason_layout.addRow("Oznake:", self.detail_flags)  # "Flags:"
         layout.addWidget(reason_group)
 
         # Note section
-        note_group = QGroupBox("Note")
+        note_group = QGroupBox("Bilješka")  # "Note"
         note_layout = QFormLayout(note_group)
         self.detail_note = QLabel("-")
         self.detail_note.setWordWrap(True)
         self.detail_note_timestamp = QLabel("")
         self.detail_note_timestamp.setStyleSheet("color: #666; font-size: 10px;")
-        note_layout.addRow("Current:", self.detail_note)
-        note_layout.addRow("Updated:", self.detail_note_timestamp)
+        note_layout.addRow("Trenutna:", self.detail_note)  # "Current:"
+        note_layout.addRow("Ažurirano:", self.detail_note_timestamp)  # "Updated:"
         layout.addWidget(note_group)
 
         # Actions within panel
         note_actions = QHBoxLayout()
-        self.edit_note_btn = QPushButton("Edit Note")
+        self.edit_note_btn = QPushButton("Uredi bilješku")  # "Edit Note"
         self.edit_note_btn.clicked.connect(self._on_edit_note)
         note_actions.addWidget(self.edit_note_btn)
 
         self.status_combo = QComboBox()
-        self.status_combo.addItems(["pending", "reviewed", "needs_fix", "fixed"])
-        self.status_combo.currentTextChanged.connect(self._on_status_changed)
+        # Values are internal keys — display text is Serbian, data stays English
+        self.status_combo.addItem("Na čekanju", "pending")    # "pending"
+        self.status_combo.addItem("Pregledano", "reviewed")   # "reviewed"
+        self.status_combo.addItem("Treba popravku", "needs_fix")  # "needs_fix"
+        self.status_combo.addItem("Popravljeno", "fixed")     # "fixed"
+        self.status_combo.currentIndexChanged.connect(self._on_status_changed)
         note_actions.addWidget(QLabel("Status:"))
         note_actions.addWidget(self.status_combo)
         note_actions.addStretch()
@@ -334,30 +389,31 @@ class ReviewQueueTab(QWidget):
     def _create_actions(self) -> QWidget:
         """Create action buttons widget."""
         widget = QWidget()
+        widget.setObjectName("action_bar")
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.open_page_btn = QPushButton("Open Page")
+        self.open_page_btn = QPushButton("Otvori stranicu")  # "Open Page"
         self.open_page_btn.setEnabled(False)
         self.open_page_btn.clicked.connect(self._on_open_page)
 
-        self.mark_reviewed_btn = QPushButton("Mark Reviewed")
+        self.mark_reviewed_btn = QPushButton("Označi kao pregledano")  # "Mark Reviewed"
         self.mark_reviewed_btn.setEnabled(False)
         self.mark_reviewed_btn.clicked.connect(lambda: self._on_change_status("reviewed"))
 
-        self.mark_needs_fix_btn = QPushButton("Mark Needs Fix")
+        self.mark_needs_fix_btn = QPushButton("Označi za popravku")  # "Mark Needs Fix"
         self.mark_needs_fix_btn.setEnabled(False)
         self.mark_needs_fix_btn.clicked.connect(lambda: self._on_change_status("needs_fix"))
 
-        self.mark_fixed_btn = QPushButton("Mark Fixed")
+        self.mark_fixed_btn = QPushButton("Označi kao popravljeno")  # "Mark Fixed"
         self.mark_fixed_btn.setEnabled(False)
         self.mark_fixed_btn.clicked.connect(lambda: self._on_change_status("fixed"))
 
-        self.remove_btn = QPushButton("Remove from Queue")
+        self.remove_btn = QPushButton("Ukloni iz reda")  # "Remove from Queue"
         self.remove_btn.setEnabled(False)
         self.remove_btn.clicked.connect(self._on_remove)
 
-        self.next_btn = QPushButton("Next Candidate")
+        self.next_btn = QPushButton("Sljedeći kandidat")  # "Next Candidate"
         self.next_btn.setEnabled(False)
         self.next_btn.clicked.connect(self._on_next)
 
@@ -400,19 +456,19 @@ class ReviewQueueTab(QWidget):
         self.detail_score.setText("-")
         self.detail_reason.setText("-")
         self.detail_flags.setText("-")
-        self.detail_note.setText("No note yet.")
+        self.detail_note.setText("Još nema bilješke.")  # "No note yet."
         self.detail_note_timestamp.setText("")
         self.status_combo.setCurrentIndex(0)
 
     def _update_summary(self):
         """Update queue summary."""
         state = self.review_controller.state
-        self.total_label.setText(f"Total: {state.total_count}")
-        self.pending_label.setText(f"Pending: {state.pending_count}")
-        self.needs_fix_label.setText(f"Needs Fix: {state.needs_fix_count}")
-        self.reviewed_label.setText(f"Reviewed: {state.reviewed_count}")
-        self.fixed_label.setText(f"Fixed: {state.fixed_count}")
-        self.manual_label.setText(f"Manual: {state.manually_added_count}")
+        self.total_label.setText(f"Ukupno: {state.total_count}")  # "Total: ..."
+        self.pending_label.setText(f"Na čekanju: {state.pending_count}")  # "Pending: ..."
+        self.needs_fix_label.setText(f"Treba popravku: {state.needs_fix_count}")  # "Needs Fix: ..."
+        self.reviewed_label.setText(f"Pregledano: {state.reviewed_count}")  # "Reviewed: ..."
+        self.fixed_label.setText(f"Popravljeno: {state.fixed_count}")  # "Fixed: ..."
+        self.manual_label.setText(f"Ručno: {state.manually_added_count}")  # "Manual: ..."
 
     @pyqtSlot()
     def _on_queue_updated(self):
@@ -429,7 +485,7 @@ class ReviewQueueTab(QWidget):
     @pyqtSlot()
     def _on_all_reviewed(self):
         """Handle all reviewed signal."""
-        self.all_reviewed_label.setText("✓ All candidates reviewed!")
+        self.all_reviewed_label.setText("✓ Svi kandidati su pregledani!")  # "✓ All candidates reviewed!"
         self.next_btn.setEnabled(False)
 
     def _on_row_clicked(self, index: QModelIndex):
@@ -449,23 +505,60 @@ class ReviewQueueTab(QWidget):
         self.detail_title.setText(str(candidate.get("title", "-")))
         self.detail_score.setText(str(candidate.get("overall_score", "-")))
 
-        # Reason
-        reason = self.review_controller.get_reason(candidate)
-        self.detail_reason.setText(reason)
-
-        # Flags
-        flags = []
-        if candidate.get("flag_noindex"):
-            flags.append("Noindex")
-        if candidate.get("flag_canonical_missing"):
-            flags.append("Canonical Issue")
-        if candidate.get("flag_js_rendered"):
-            flags.append("JS Rendered")
-        self.detail_flags.setText(", ".join(flags) if flags else "None")
+        # Severity and reasons
+        severity = candidate.get("severity", "")
+        reasons = candidate.get("reasons", "")
+        
+        # Map severity to Serbian
+        severity_map = {
+            "CRITICAL": "KRITIČNO",
+            "HIGH": "VISOKO",
+            "MEDIUM": "SREDNJE",
+            "LOW": "NISKO"
+        }
+        severity_display = severity_map.get(severity, severity)
+        
+        # Map reasons to Serbian
+        reason_map = {
+            "fetch-error": "Fetch greška",
+            "non-200": "Status nije 200",
+            "not-product-page": "Nije produktna stranica",
+            "js-rendered-high": "JS render (visok rizik)",
+            "js-rendered-medium": "JS render (srednji rizik)",
+            "js-rendered": "JS render",
+            "noindex": "Noindex",
+            "canonical-mismatch": "Canonical mismatch",
+            "missing-price-critical": "Nema cijene (kritično)",
+            "missing-schema-critical": "Nema sheme (kritično)",
+            "missing-price": "Nema cijene",
+            "missing-schema": "Nema sheme",
+            "low-content": "Malo sadržaja",
+            "low-score": "Nizak score",
+        }
+        
+        reason_list = []
+        if severity_display:
+            reason_list.append(f"Prioritet: {severity_display}")
+        
+        if reasons:
+            for reason in reasons.split(", "):
+                if reason in reason_map:
+                    reason_list.append(reason_map[reason])
+                elif reason:
+                    reason_list.append(reason)
+        
+        # Fallback to old method if no new data
+        if not reason_list:
+            reason = self.review_controller.get_reason(candidate)
+            self.detail_reason.setText(reason)
+            self.detail_flags.setText("Nema")
+        else:
+            self.detail_reason.setText("\n".join(reason_list))
+            self.detail_flags.setText("")
 
         # Note
         note = self.review_controller.get_note(url)
-        self.detail_note.setText(note if note else "No note yet.")
+        self.detail_note.setText(note if note else "Još nema bilješke.")  # "No note yet."
 
         # Get timestamp from controller
         review_data = self.review_controller.get_review_data(url)
@@ -477,7 +570,7 @@ class ReviewQueueTab(QWidget):
 
         # Status
         status = self.review_controller.get_status(url)
-        index = self.status_combo.findText(status)
+        index = self.status_combo.findData(status)  # find by English key
         if index >= 0:
             self.status_combo.setCurrentIndex(index)
 
@@ -486,16 +579,17 @@ class ReviewQueueTab(QWidget):
         if self._current_url:
             QDesktopServices.openUrl(QUrl(self._current_url))
 
-    def _on_status_changed(self, status: str):
+    def _on_status_changed(self, _):
         """Handle status combo change."""
         if self._current_url:
+            status = self.status_combo.currentData()  # English key, e.g. "pending"
             self.review_controller.set_status(self._current_url, status)
 
     def _on_change_status(self, status: str):
         """Change status via button."""
         if self._current_url:
             self.review_controller.set_status(self._current_url, status)
-            index = self.status_combo.findText(status)
+            index = self.status_combo.findData(status)  # find by English key
             if index >= 0:
                 self.status_combo.setCurrentIndex(index)
 
@@ -510,7 +604,7 @@ class ReviewQueueTab(QWidget):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             note = dialog.get_note()
             self.review_controller.set_note(self._current_url, note)
-            self.detail_note.setText(note if note else "No note yet.")
+            self.detail_note.setText(note if note else "Još nema bilješke.")  # "No note yet."
 
     def _on_remove(self):
         """Remove from queue."""
@@ -519,8 +613,8 @@ class ReviewQueueTab(QWidget):
 
         reply = QMessageBox.question(
             self,
-            "Remove from Queue",
-            "Are you sure you want to remove this product from the queue?",
+            "Ukloni iz reda",  # "Remove from Queue"
+            "Jeste li sigurni da želite ukloniti ovaj proizvod iz reda?",  # "Are you sure you want to remove this product from the queue?"
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
