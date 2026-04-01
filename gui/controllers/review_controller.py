@@ -6,6 +6,7 @@ Učitava CSV, upravlja statusom, čuva/čita note iz JSON.
 """
 import os
 import json
+import pandas as pd
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal as Signal
 from typing import Optional
@@ -250,7 +251,8 @@ class ReviewController(QObject):
         if severity:
             reasons.append(f"Severity: {severity}")
         
-        if reason_str:
+        # Handle NaN/None values
+        if not pd.isna(reason_str) and reason_str:
             # Convert machine-readable reasons to human-readable
             reason_map = {
                 "fetch-error": "Fetch Error",
@@ -269,7 +271,8 @@ class ReviewController(QObject):
                 "low-score": "Low Score",
             }
             
-            for reason in reason_str.split(", "):
+            reason_str_clean = str(reason_str)
+            for reason in reason_str_clean.split(", "):
                 if reason in reason_map:
                     reasons.append(reason_map[reason])
                 elif reason:
