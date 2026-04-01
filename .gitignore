@@ -39,3 +39,4 @@ Thumbs.db
 .env
 *.env
 secrets.py
+webshop_audit_agent_docs.zip
