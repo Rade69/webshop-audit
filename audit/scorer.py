@@ -250,15 +250,24 @@ def build_scored_dataframe(
     df["flag_noindex"] = df["robots_meta"].apply(
         lambda x: is_noindex(x)
     )
-    df["flag_canonical_mismatch"] = df["indexability_flags"].str.contains(
-        "canonical_mismatch", na=False
-    )
-    df["flag_fetch_error"] = df["indexability_flags"].str.contains(
-        "fetch_error", na=False
-    )
-    df["flag_non_200"] = df["indexability_flags"].str.contains(
-        r"status_\d+", na=False, regex=True
-    )
+    
+    # Handle NaN values in indexability_flags before using .str accessor
+    if "indexability_flags" in df.columns:
+        flags_series = df["indexability_flags"].fillna("")
+        df["flag_canonical_mismatch"] = flags_series.str.contains(
+            "canonical_mismatch", na=False
+        )
+        df["flag_fetch_error"] = flags_series.str.contains(
+            "fetch_error", na=False
+        )
+        df["flag_non_200"] = flags_series.str.contains(
+            r"status_\d+", na=False, regex=True
+        )
+    else:
+        df["flag_canonical_mismatch"] = False
+        df["flag_fetch_error"] = False
+        df["flag_non_200"] = False
+    
     df["flag_js_rendered"] = df["is_likely_js_rendered"].astype(bool)
 
     # Convenience diagnostic flags

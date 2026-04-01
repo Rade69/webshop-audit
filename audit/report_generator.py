@@ -265,8 +265,15 @@ def _compute_stats(data: dict) -> dict:
         no_price_html = int(df["html_price_text"].isna().sum()) if "html_price_text" in df.columns else 0
         no_shipping  = int(df["shipping_signal"].eq(False).sum()) if "shipping_signal" in df.columns else 0
         no_returns   = int(df["returns_signal"].eq(False).sum()) if "returns_signal" in df.columns else 0
-        noindex      = int(df["indexability_flags"].str.contains("noindex", na=False).sum()) if "indexability_flags" in df.columns else 0
-        canonical_mm = int(df["indexability_flags"].str.contains("canonical", na=False).sum()) if "indexability_flags" in df.columns else 0
+        # Handle NaN values in indexability_flags before using .str accessor
+        if "indexability_flags" in df.columns:
+            # Fill NaN with empty string for string operations
+            flags_series = df["indexability_flags"].fillna("")
+            noindex = int(flags_series.str.contains("noindex", na=False).sum())
+            canonical_mm = int(flags_series.str.contains("canonical", na=False).sum())
+        else:
+            noindex = 0
+            canonical_mm = 0
     else:
         avg_overall = avg_catalog = avg_machine = avg_commerce = 0
         no_schema = no_offer = no_price_sc = no_avail = no_sku = no_brand = 0

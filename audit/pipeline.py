@@ -290,7 +290,8 @@ def run_audit(
         "pages_with_schema_product": int(df_scored["schema_product_present"].sum()),
         "pages_without_price": int(df_scored["suspicious_price_missing"].sum()),
         "pages_with_low_content": int(df_scored["suspicious_low_content"].sum()),
-        "pages_with_indexability_flags": int((df_scored["indexability_flags"].str.len() > 0).sum()),
+        # Handle NaN values in indexability_flags
+        "pages_with_indexability_flags": int((df_scored["indexability_flags"].fillna("").str.len() > 0).sum()),
         "manual_review_candidates": len(candidates),
         "non_product_pages": int((~df_scored["is_likely_product_page"].astype(bool)).sum()),
         "elapsed_seconds": elapsed,

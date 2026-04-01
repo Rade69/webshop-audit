@@ -236,7 +236,12 @@ def select_best_products_sample(
             return agent_ready.sort_values("overall_score", ascending=False).head(top_n)
     
     # Combine: agent-ready + non-flagged products
-    no_flags = df[df["indexability_flags"].str.len() == 0]
+    # Handle NaN values in indexability_flags
+    if "indexability_flags" in df.columns:
+        flags_series = df["indexability_flags"].fillna("")
+        no_flags = df[flags_series.str.len() == 0]
+    else:
+        no_flags = df.copy()
     
     if "agent_ready" in df.columns:
         # Prefer agent-ready products, then others with no flags

@@ -96,7 +96,9 @@ class ResultsController(QObject):
         # Apply filters
         if self._state.filter_category:
             if "breadcrumb_text" in df.columns:
-                df = df[df["breadcrumb_text"].str.contains(self._state.filter_category, na=False)]
+                # Handle NaN values in breadcrumb_text
+                breadcrumb_series = df["breadcrumb_text"].fillna("")
+                df = df[breadcrumb_series.str.contains(self._state.filter_category, na=False)]
 
         if self._state.filter_min_score > 0:
             if "overall_score" in df.columns:
@@ -136,10 +138,12 @@ class ResultsController(QObject):
         if self._state.search_text:
             search = self._state.search_text.lower()
             cols_to_search = ["url", "title", "schema_sku", "schema_gtin"]
-            mask = pd.Series([False] * len(df))
+            mask = pd.Series([False] * len(df), index=df.index)
             for col in cols_to_search:
                 if col in df.columns:
-                    mask = mask | df[col].astype(str).str.lower().str.contains(search, na=False)
+                    # Handle NaN values before string operations
+                    col_series = df[col].fillna("").astype(str)
+                    mask = mask | col_series.str.lower().str.contains(search, na=False)
             df = df[mask]
 
         self._state.filtered_count = len(df)
