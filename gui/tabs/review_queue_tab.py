@@ -45,8 +45,8 @@ class ReviewTableModel(QAbstractTableModel):
         super().__init__(parent)
         self._data = data if data is not None else []
         self._adapter = adapter
-        self._columns = ["url", "severity", "reasons", "overall_score", "status", "has_note"]
-        self._headers = ["Proizvod", "Prioritet", "Razlozi", "Ocjena", "Status", "Bilješka"]  # "Product", "Severity", "Reasons", "Score", "Status", "Note"
+        self._columns = ["url", "severity", "fix_impact", "reasons", "overall_score", "status", "has_note"]
+        self._headers = ["Proizvod", "Prioritet", "Impact", "Razlozi", "Ocjena", "Status", "Bilješka"]  # "Product", "Severity", "Impact", "Reasons", "Score", "Status", "Note"
 
     def set_adapter(self, adapter: ReviewAdapter):
         """Set the adapter instance."""
@@ -83,6 +83,8 @@ class ReviewTableModel(QAbstractTableModel):
                 return self._adapter.get_display_title(candidate)
             elif col_name == "severity":
                 return self._adapter.get_formatted_severity(candidate)
+            elif col_name == "fix_impact":
+                return self._adapter.get_fix_impact(candidate)
             elif col_name == "reasons":
                 return self._adapter.get_formatted_reasons(candidate)
             elif col_name == "overall_score":
@@ -93,11 +95,16 @@ class ReviewTableModel(QAbstractTableModel):
                 return "✓" if candidate.get("note") else "-"
 
         elif role == Qt.ItemDataRole.BackgroundRole:
+            # First check impact color, then row color
+            if col_name == "fix_impact":
+                color_hex = self._adapter.get_impact_color(candidate) if self._adapter else None
+                if color_hex:
+                    return QColor(color_hex)
             color_hex = self._adapter.get_row_color(candidate) if self._adapter else None
             return QColor(color_hex) if color_hex else None
 
         elif role == Qt.ItemDataRole.TextAlignmentRole:
-            if col_name in ["severity", "overall_score", "status", "has_note"]:
+            if col_name in ["severity", "fix_impact", "overall_score", "status", "has_note"]:
                 return Qt.AlignmentFlag.AlignCenter
 
         return None
@@ -309,6 +316,37 @@ class ReviewQueueTab(QWidget):
         reason_layout.addRow("Oznake:", self.detail_flags)  # "Flags:"
         layout.addWidget(reason_group)
 
+        # Explanation section
+        explanation_group = QGroupBox("Objašnjenje")  # "Explanation"
+        explanation_layout = QVBoxLayout(explanation_group)
+        self.detail_explanation = QLabel("-")
+        self.detail_explanation.setWordWrap(True)
+        self.detail_explanation.setStyleSheet("color: #333; padding: 5px;")
+        explanation_layout.addWidget(self.detail_explanation)
+        layout.addWidget(explanation_group)
+
+        # Evidence section
+        evidence_group = QGroupBox("Dokazi")  # "Evidence"
+        evidence_layout = QVBoxLayout(evidence_group)
+        self.detail_evidence = QLabel("-")
+        self.detail_evidence.setWordWrap(True)
+        self.detail_evidence.setStyleSheet("color: #555; font-size: 11px; padding: 5px;")
+        evidence_layout.addWidget(self.detail_evidence)
+        layout.addWidget(evidence_group)
+
+        # Fix Impact section
+        impact_group = QGroupBox("Impact popravke")  # "Fix Impact"
+        impact_layout = QVBoxLayout(impact_group)
+        self.detail_impact = QLabel("-")
+        self.detail_impact.setStyleSheet("font-weight: bold; font-size: 12px; padding: 5px;")
+        impact_layout.addWidget(self.detail_impact)
+        
+        self.detail_impact_desc = QLabel("")
+        self.detail_impact_desc.setWordWrap(True)
+        self.detail_impact_desc.setStyleSheet("color: #666; font-size: 10px;")
+        impact_layout.addWidget(self.detail_impact_desc)
+        layout.addWidget(impact_group)
+
         # Note section
         note_group = QGroupBox("Bilješka")  # "Note"
         note_layout = QFormLayout(note_group)
@@ -413,6 +451,10 @@ class ReviewQueueTab(QWidget):
         self.detail_score.setText("-")
         self.detail_reason.setText("-")
         self.detail_flags.setText("-")
+        self.detail_explanation.setText("-")
+        self.detail_evidence.setText("-")
+        self.detail_impact.setText("-")
+        self.detail_impact_desc.setText("")
         self.detail_note.setText("Još nema bilješke.")  # "No note yet."
         self.detail_note_timestamp.setText("")
         self.status_combo.setCurrentIndex(0)
@@ -466,6 +508,40 @@ class ReviewQueueTab(QWidget):
         self.detail_url.setText(f'<a href="{url}">{url}</a>')
         self.detail_title.setText(str(candidate.get("title", "-")))
         self.detail_score.setText(str(candidate.get("overall_score", "-")))
+
+        # Reason
+        self.detail_reason.setText(self._adapter.get_all_formatted_reasons(candidate))
+        self.detail_flags.setText(self._adapter.get_display_reason_for_details(candidate))
+
+        # Explanation (new)
+        explanation = self._adapter.get_explanation(candidate)
+        self.detail_explanation.setText(explanation if explanation != "-" else "Nema objašnjenja.")
+
+        # Evidence (new)
+        evidence_summary = self._adapter.get_evidence_summary(candidate)
+        self.detail_evidence.setText(evidence_summary if evidence_summary != "-" else "Nema dokaza.")
+
+        # Fix Impact (new)
+        impact = self._adapter.get_fix_impact(candidate)
+        self.detail_impact.setText(f"Impact: {impact}")
+        
+        # Color-code impact
+        impact_colors = {
+            "VISOK": "#B53A32",  # Red
+            "SREDNJI": "#D97706",  # Orange
+            "NIZAK": "#059669",  # Green
+        }
+        self.detail_impact.setStyleSheet(
+            f"font-weight: bold; font-size: 12px; padding: 5px; color: {impact_colors.get(impact, '#333')};"
+        )
+        
+        # Impact description
+        impact_desc_map = {
+            "VISOK": "Kritično za popravku — visok uticaj na prodaju/SEO",
+            "SREDNJI": "Korisno popraviti — srednji uticaj",
+            "NIZAK": "Manje prioritetno — nizak uticaj",
+        }
+        self.detail_impact_desc.setText(impact_desc_map.get(impact, ""))
 
         # Use adapter for reasons formatting - adapter is always set
         formatted_reasons = self._adapter.get_display_reason_for_details(candidate)

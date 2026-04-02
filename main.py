@@ -52,6 +52,17 @@ def parse_args() -> argparse.Namespace:
         help="Compare this run with a previous run's output directory"
     )
 
+    # Export options
+    export_group = parser.add_argument_group("Export options")
+    export_group.add_argument(
+        "--export-issues", action="store_true",
+        help="Export issue-centric summary and mapping CSVs"
+    )
+    export_group.add_argument(
+        "--export-evidence", action="store_true",
+        help="Export evidence snapshots for all products"
+    )
+
     return parser.parse_args()
 
 
@@ -180,6 +191,67 @@ def main():
     print(f"\n  Outputs saved to: {result['output_dir']}")
     if args.compare_with and os.path.isdir(args.compare_with):
         print(f"  Diff outputs saved to: {result['output_dir']}")
+    
+    # Export options
+    if args.export_issues:
+        from audit.issue_grouping import create_issue_summary, create_issue_to_urls_mapping
+        from audit.exporters import export_issue_summary, export_issue_to_urls
+        import pandas as pd
+        
+        # Load scored data
+        scored_path = os.path.join(result['output_dir'], "products_scored.csv")
+        if os.path.isfile(scored_path):
+            df = pd.read_csv(scored_path)
+            
+            # Export issue summary
+            issue_summary = create_issue_summary(df)
+            export_issue_summary(issue_summary, os.path.join(result['output_dir'], "issue_summary.csv"))
+            print(f"  Exported: issue_summary.csv")
+            
+            # Export issue to URLs mapping
+            issue_to_urls = create_issue_to_urls_mapping(df)
+            export_issue_to_urls(issue_to_urls, os.path.join(result['output_dir'], "issue_to_urls.csv"))
+            print(f"  Exported: issue_to_urls.csv")
+        else:
+            print(f"  WARNING: products_scored.csv not found, skipping issue export")
+    
+    if args.export_evidence:
+        from audit.evidence import EvidenceSnapshot, format_evidence_for_display
+        import pandas as pd
+        
+        # Load scored data
+        scored_path = os.path.join(result['output_dir'], "products_scored.csv")
+        if os.path.isfile(scored_path):
+            df = pd.read_csv(scored_path)
+            
+            # Generate evidence for each row
+            evidence_records = []
+            for _, row in df.iterrows():
+                evidence = EvidenceSnapshot.from_row(row)
+                evidence_records.append({
+                    "url": row.get("url", ""),
+                    "status_code": row.get("status_code", ""),
+                    "fetch_error": row.get("fetch_error", ""),
+                    "canonical": row.get("canonical", ""),
+                    "robots_meta": row.get("robots_meta", ""),
+                    "html_price_text": row.get("html_price_text", ""),
+                    "schema_price": row.get("schema_price", ""),
+                    "schema_price_value": row.get("schema_price_value", ""),
+                    "schema_currency": row.get("schema_currency", ""),
+                    "schema_product_present": row.get("schema_product_present", False),
+                    "schema_sku": row.get("schema_sku", ""),
+                    "schema_brand": row.get("schema_brand", ""),
+                    "breadcrumb_text": row.get("breadcrumb_text", ""),
+                    "visible_text_length": row.get("visible_text_length", 0),
+                })
+            
+            evidence_df = pd.DataFrame(evidence_records)
+            export_path = os.path.join(result['output_dir'], "evidence_snapshots.csv")
+            evidence_df.to_csv(export_path, index=False, encoding="utf-8-sig")
+            print(f"  Exported: evidence_snapshots.csv ({len(evidence_records)} rows)")
+        else:
+            print(f"  WARNING: products_scored.csv not found, skipping evidence export")
+    
     print(f"{'='*60}\n")
 
 

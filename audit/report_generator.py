@@ -225,7 +225,7 @@ def _load_data(output_dir: str) -> dict:
     else:
         data["summary"] = {}
 
-    for name in ("products_scored", "manual_review_candidates", "category_summary", "errors"):
+    for name in ("products_scored", "manual_review_candidates", "category_summary", "errors", "issue_summary"):
         path = os.path.join(output_dir, f"{name}.csv")
         if os.path.isfile(path):
             try:
@@ -242,6 +242,7 @@ def _compute_stats(data: dict) -> dict:
     """Računa sve agregatne statistike potrebne za izvještaj."""
     summary = data.get("summary", {})
     df = data.get("products_scored")
+    issue_summary = data.get("issue_summary")
 
     total = summary.get("total_urls", 0)
     parsed = summary.get("successfully_parsed", 0)
@@ -284,6 +285,19 @@ def _compute_stats(data: dict) -> dict:
     price_miss_pct  = _pct(summary.get("pages_without_price", 0), parsed)
     low_cont_pct    = _pct(summary.get("pages_with_low_content", 0), parsed)
 
+    # Issue summary (from issue_summary.csv if available)
+    issue_stats = {}
+    high_impact_issues = []
+    if issue_summary is not None and not issue_summary.empty:
+        for _, row in issue_summary.iterrows():
+            issue_id = row.get("issue_id", "")
+            count = row.get("count", 0)
+            pct = row.get("pct_affected", 0)
+            impact = row.get("impact", "MEDIUM")
+            issue_stats[issue_id] = {"count": count, "pct": pct, "impact": impact}
+            if impact == "HIGH" and count > 0:
+                high_impact_issues.append((row.get("display_name", issue_id), count, pct))
+    
     # Biggest problems za 30/60/90 plan
     problems = sorted([
         ("Nema Product schema", no_schema, _pct(no_schema, parsed)),
@@ -308,6 +322,8 @@ def _compute_stats(data: dict) -> dict:
         "noindex": noindex, "canonical_mm": canonical_mm,
         "candidates": summary.get("manual_review_candidates", 0),
         "problems": problems,
+        "issue_stats": issue_stats,
+        "high_impact_issues": high_impact_issues,
     }
 
 
@@ -607,6 +623,32 @@ def generate_report(output_dir: str, log=None) -> str:
 
     doc.add_paragraph()
 
+    # 4.3b Issue Summary (NEW)
+    issue_df = data.get("issue_summary")
+    if issue_df is not None and not issue_df.empty:
+        _add_heading(doc, "3.3b Pregled po tipovima problema", 2)
+        doc.add_paragraph("Problemi grupisani po tipu sa impact nivoom (HIGH = visok uticaj popravke):")
+        
+        t_issue = doc.add_table(rows=1, cols=5)
+        t_issue.style = "Table Grid"
+        _add_table_header(t_issue, ["Problem", "Impact", "Broj", "%", "Avg score"])
+        
+        # Sort by impact (HIGH first) then by count
+        impact_order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+        issue_rows = sorted(issue_df.to_dict("records"), key=lambda x: (impact_order.get(x.get("impact", "LOW"), 2), -x.get("count", 0)))
+        
+        for i, row in enumerate(issue_rows):
+            if row.get("count", 0) > 0:
+                _add_table_row(t_issue, [
+                    row.get("display_name", "-"),
+                    row.get("impact", "-"),
+                    str(row.get("count", 0)),
+                    str(row.get("pct_affected", 0)),
+                    str(row.get("avg_score", "-")),
+                ], alt=(i % 2 == 1))
+        
+        doc.add_paragraph()
+
     # 4.4 Kategorije
     cat_df = data.get("category_summary")
     if cat_df is not None and not cat_df.empty:
@@ -644,6 +686,21 @@ def generate_report(output_dir: str, log=None) -> str:
 
     # ── Sekcija 5: Quick Wins ──────────────────────────────────────────────────
     _add_heading(doc, "4. Quick Wins", 1)
+    
+    # Fix Impact Priorities (NEW)
+    if s.get("high_impact_issues"):
+        _add_heading(doc, "Prioriteti za popravku (HIGH impact)", 2)
+        doc.add_paragraph("Ovi problemi imaju najveći uticaj na kvalitet webshop-a. Preporučuje se hitna popravka:")
+        
+        t_impact = doc.add_table(rows=1, cols=3)
+        t_impact.style = "Table Grid"
+        _add_table_header(t_impact, ["Problem", "Broj stranica", "% od ukupno"])
+        
+        for i, (name, count, pct) in enumerate(s["high_impact_issues"]):
+            _add_table_row(t_impact, [name, str(count), pct], alt=(i % 2 == 1))
+        
+        doc.add_paragraph()
+    
     for para in quick_wins.split("\n\n"):
         para = para.strip()
         if not para:

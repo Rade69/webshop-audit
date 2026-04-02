@@ -190,6 +190,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
         self._filter_fetch_error = False
         self._search_text = ""
         self._category = ""
+        self._issue_preset = ""
 
     def set_adapter(self, adapter: ResultsAdapter):
         """Set the adapter instance for filtering."""
@@ -208,6 +209,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
         fetch_error=False,
         search_text="",
         category="",
+        issue_preset="",
     ):
         """Set filter parameters."""
         self._min_score = min_score
@@ -221,6 +223,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
         self._filter_fetch_error = fetch_error
         self._search_text = search_text.lower()
         self._category = category
+        self._issue_preset = issue_preset
         self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row, source_parent):
@@ -293,6 +296,25 @@ class ResultsFilterModel(QSortFilterProxyModel):
             breadcrumb = self._adapter.get_value(product, "breadcrumb_text", "")
             if self._category not in str(breadcrumb):
                 return False
+
+        # Issue preset filter
+        if self._issue_preset:
+            # Map issue_preset to flag column
+            issue_flag_map = {
+                "missing_price": "suspicious_price_missing",
+                "missing_schema": "suspicious_schema_missing",
+                "noindex": "flag_noindex",
+                "canonical_mismatch": "flag_canonical_mismatch",
+                "fetch_error": "flag_fetch_error",
+                "non_200": "flag_non_200",
+                "js_rendered": "flag_js_rendered",
+                "low_content": "suspicious_low_content",
+                "not_product_page": "flag_not_product_page",
+            }
+            flag_col = issue_flag_map.get(self._issue_preset)
+            if flag_col:
+                if not self._adapter.get_value(product, flag_col, False):
+                    return False
 
         # Search filter
         if self._search_text:
@@ -440,6 +462,23 @@ class ResultsTab(QWidget):
         # ── Red 2: checkbox filteri ───────────────────────────────────────────
         row2 = QHBoxLayout()
         row2.setSpacing(16)
+
+        # Issue preset dropdown
+        row2.addWidget(QLabel("Filtriraj po problemu:"))  # "Filter by issue:"
+        self.issue_preset_combo = QComboBox()
+        self.issue_preset_combo.addItem("Svi problemi", "")  # "All issues"
+        self.issue_preset_combo.addItem("Nema cijene", "missing_price")
+        self.issue_preset_combo.addItem("Nema sheme", "missing_schema")
+        self.issue_preset_combo.addItem("Noindex", "noindex")
+        self.issue_preset_combo.addItem("Canonical mismatch", "canonical_mismatch")
+        self.issue_preset_combo.addItem("Fetch greška", "fetch_error")
+        self.issue_preset_combo.addItem("Nije 200 OK", "non_200")
+        self.issue_preset_combo.addItem("JS render", "js_rendered")
+        self.issue_preset_combo.addItem("Malo sadržaja", "low_content")
+        self.issue_preset_combo.addItem("Nije produktna", "not_product_page")
+        self.issue_preset_combo.currentTextChanged.connect(self._on_filter_changed)
+        self.issue_preset_combo.setMinimumWidth(180)
+        row2.addWidget(self.issue_preset_combo)
 
         self.missing_schema_cb = QCheckBox("Nema sheme")  # "Missing Schema"
         self.missing_schema_cb.stateChanged.connect(self._on_filter_changed)
@@ -711,6 +750,9 @@ class ResultsTab(QWidget):
 
     def _on_filter_changed(self):
         """Handle filter changes."""
+        # Get selected issue preset
+        issue_preset = self.issue_preset_combo.currentData()
+        
         self.filter_model.set_filters(
             min_score=self.min_score_spin.value(),
             max_score=self.max_score_spin.value(),
@@ -723,6 +765,7 @@ class ResultsTab(QWidget):
             fetch_error=self.fetch_error_cb.isChecked(),
             search_text=self.search_input.text(),
             category=self.category_combo.currentData(),
+            issue_preset=issue_preset,
         )
 
     def _on_search_changed(self, text: str):
@@ -737,6 +780,7 @@ class ResultsTab(QWidget):
 
     def _on_reset_filters(self):
         """Reset all filters."""
+        self.issue_preset_combo.setCurrentIndex(0)
         self.category_combo.setCurrentIndex(0)
         self.min_score_spin.setValue(0)
         self.max_score_spin.setValue(100)

@@ -210,32 +210,37 @@ def get_all_issue_groups(df: pd.DataFrame) -> List[IssueGroup]:
 def create_issue_summary(df: pd.DataFrame) -> pd.DataFrame:
     """
     Kreira issue summary DataFrame za CSV export.
-    
+
     Args:
         df: Scored DataFrame
-    
+
     Returns:
         DataFrame sa kolonama:
-        - issue_id, display_name, description, priority
+        - issue_id, display_name, description, priority, impact
         - count, avg_score, pct_affected
     """
     groups = get_all_issue_groups(df)
     total_urls = len(df)
-    
+
     records = []
     for g in groups:
         pct_affected = round(g.count / total_urls * 100, 1) if total_urls > 0 else 0.0
+        # Get impact from ISSUE_DEFINITIONS
+        issue_def = next((i for i in ISSUE_DEFINITIONS if i["issue_id"] == g.issue_id), None)
+        impact = issue_def["impact"] if issue_def else "MEDIUM"
+        
         records.append({
             "issue_id": g.issue_id,
             "display_name": g.display_name,
             "description": g.description,
             "priority": g.priority,
+            "impact": impact,
             "count": g.count,
             "avg_score": g.avg_score,
             "pct_affected": pct_affected,
             "top_urls": "; ".join(g.urls[:5]),  # Prvih 5 za preview
         })
-    
+
     return pd.DataFrame(records)
 
 
