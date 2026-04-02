@@ -320,3 +320,214 @@ def test_agent_ready_missing_schema():
     df = pd.DataFrame([row])
     scored = build_scored_dataframe(df)
     assert scored["agent_ready"].iloc[0] == False
+
+
+# ---------------------------------------------------------------------------
+# categorize_by_breadcrumb (summarize_by_category)
+# ---------------------------------------------------------------------------
+
+def test_category_breadcrumb_reverse_iteration():
+    """
+    Category should be extracted from most specific breadcrumb segment.
+    When iterating reversed, we get the deepest category first.
+    """
+    from audit.scorer import summarize_by_category
+    
+    df = pd.DataFrame([
+        {
+            "url": "https://shop.com/majica/123",
+            "breadcrumb_text": "Home > Proizvodi > Tekstil > Majice > Majica > Nike T-Shirt",
+            "overall_score": 80,
+            "catalog_score": 100,
+            "machine_score": 80,
+            "commerce_score": 60,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+        {
+            "url": "https://shop.com/cizme/456",
+            "breadcrumb_text": "Home > Proizvodi > Obuća > Cipele i čizme > Čizme > Puma Chelsea",
+            "overall_score": 75,
+            "catalog_score": 100,
+            "machine_score": 70,
+            "commerce_score": 55,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+    ])
+    
+    result = summarize_by_category(df)
+    
+    assert result is not None, "Expected category summary, got None"
+    categories = result["category"].tolist()
+    # With reversed iteration, should get specific categories, not "Proizvodi"
+    assert "Majice" in categories or "Majica" in categories, f"Expected Majice/Majica in categories, got {categories}"
+    assert "Čizme" in categories or "Obuća" in categories, f"Expected specific category, got {categories}"
+
+
+def test_category_fallback_to_unknown():
+    """When no useful category signal exists, should return 'Unknown'."""
+    from audit.scorer import summarize_by_category
+    
+    df = pd.DataFrame([
+        {
+            "url": "https://shop.com/product/123",
+            "breadcrumb_text": "Home > Shop",  # Only generic segments
+            "overall_score": 80,
+            "catalog_score": 100,
+            "machine_score": 80,
+            "commerce_score": 60,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+    ])
+    
+    result = summarize_by_category(df)
+    
+    assert result is not None
+    # Should fallback to Unknown when all signals are generic
+    categories = result["category"].tolist()
+    assert "Unknown" in categories, f"Expected Unknown in categories, got {categories}"
+
+
+def test_category_url_fallback():
+    """When breadcrumb is useless, URL pattern should provide category."""
+    from audit.scorer import summarize_by_category
+    
+    df = pd.DataFrame([
+        {
+            "url": "https://shop.com/majica/123",  # URL has category pattern
+            "breadcrumb_text": "Home > Proizvodi",  # Only generic in breadcrumb
+            "overall_score": 80,
+            "catalog_score": 100,
+            "machine_score": 80,
+            "commerce_score": 60,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+    ])
+    
+    result = summarize_by_category(df)
+    
+    assert result is not None
+    categories = result["category"].tolist()
+    # Should extract from URL pattern
+    assert "Majice" in categories, f"Expected Majice from URL, got {categories}"
+
+
+def test_category_skips_product_names():
+    """Product names in breadcrumb should be skipped."""
+    from audit.scorer import summarize_by_category
+    
+    df = pd.DataFrame([
+        {
+            "url": "https://shop.com/patike/123",
+            "breadcrumb_text": "Home > Proizvodi > Obuća > Patike > Nike Air Max",  # Nike Air Max is product name
+            "overall_score": 80,
+            "catalog_score": 100,
+            "machine_score": 80,
+            "commerce_score": 60,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+    ])
+    
+    result = summarize_by_category(df)
+    
+    assert result is not None
+    categories = result["category"].tolist()
+    # Should NOT return "Nike Air Max" (product name)
+    # Should return "Patike" (category)
+    assert "Nike Air Max" not in categories, f"Product name should not be category: {categories}"
+    assert "Patike" in categories, f"Expected Patike, got {categories}"
+
+
+def test_category_multiple_products():
+    """Multiple products in same category should be grouped together."""
+    from audit.scorer import summarize_by_category
+    
+    df = pd.DataFrame([
+        {
+            "url": "https://shop.com/majica/1",
+            "breadcrumb_text": "Home > Proizvodi > Tekstil > Majice > Basic T-Shirt",
+            "overall_score": 80,
+            "catalog_score": 100,
+            "machine_score": 80,
+            "commerce_score": 60,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+        {
+            "url": "https://shop.com/majica/2",
+            "breadcrumb_text": "Home > Proizvodi > Tekstil > Majice > Premium T-Shirt",
+            "overall_score": 85,
+            "catalog_score": 100,
+            "machine_score": 85,
+            "commerce_score": 70,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+    ])
+    
+    result = summarize_by_category(df)
+    
+    assert result is not None
+    # Should have 2 products in one category (Majice/Majica)
+    majica_rows = result[result["category"].str.contains("Majic", case=False, na=False)]
+    assert len(majica_rows) == 1, "Products should be grouped by category"
+    assert majica_rows.iloc[0]["product_count"] == 2, "Should have 2 products in category"
+
+
+def test_category_skips_all_caps():
+    """ALL CAPS segments should be skipped as likely product names."""
+    from audit.scorer import summarize_by_category
+    
+    df = pd.DataFrame([
+        {
+            "url": "https://shop.com/majica/123",
+            # "BASELINE" is all caps - should be skipped
+            "breadcrumb_text": "Home > Proizvodi > Tekstil > Majice > Majica > BASELINE",
+            "overall_score": 80,
+            "catalog_score": 100,
+            "machine_score": 80,
+            "commerce_score": 60,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+    ])
+    
+    result = summarize_by_category(df)
+    
+    assert result is not None
+    categories = result["category"].tolist()
+    # Should NOT return "BASELINE" (all caps = product name)
+    assert "BASELINE" not in categories, f"ALL CAPS should not be category: {categories}"
+    # Should return "Majica" (the actual category before the product name)
+    assert "Majica" in categories or "Majice" in categories, f"Expected Majica/Majice, got {categories}"
+
+
+def test_category_prefers_mid_level():
+    """When breadcrumb has both category and product name, prefer mid-level category."""
+    from audit.scorer import summarize_by_category
+    
+    df = pd.DataFrame([
+        {
+            "url": "https://shop.com/bra/123",
+            # "Bra" is category, "Crossback" is product name
+            "breadcrumb_text": "Home > Proizvodi > Tekstil > Bra i top > Bra > Crossback",
+            "overall_score": 80,
+            "catalog_score": 100,
+            "machine_score": 80,
+            "commerce_score": 60,
+            "suspicious_schema_missing": False,
+            "suspicious_price_missing": False,
+        },
+    ])
+    
+    result = summarize_by_category(df)
+    
+    assert result is not None
+    categories = result["category"].tolist()
+    # Should return "Bra" not "Crossback"
+    assert "Bra" in categories, f"Expected Bra, got {categories}"
+    assert "Crossback" not in categories, f"Product name should not be category"

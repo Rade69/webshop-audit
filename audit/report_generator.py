@@ -614,13 +614,28 @@ def generate_report(output_dir: str, log=None) -> str:
         t4 = doc.add_table(rows=1, cols=5)
         t4.style = "Table Grid"
         _add_table_header(t4, ["Kategorija", "Proizvoda", "Avg score", "Bez schema", "Bez cijene"])
-        sort_col = "avg_overall_score" if "avg_overall_score" in cat_df.columns else cat_df.columns[0]
+        
+        # Map column names - scorer produces these columns
+        count_col = "product_count" if "product_count" in cat_df.columns else "count"
+        score_col = "avg_overall_score"
+        
+        # For schema/price counts, scorer produces percentages - calculate counts if needed
+        if "pct_no_schema" in cat_df.columns and count_col in cat_df.columns:
+            cat_df = cat_df.copy()
+            cat_df["no_schema_count"] = (cat_df["pct_no_schema"] / 100 * cat_df[count_col]).round().astype(int)
+            cat_df["no_price_count"] = (cat_df["pct_no_price"] / 100 * cat_df[count_col]).round().astype(int)
+        elif "no_schema_count" not in cat_df.columns:
+            cat_df = cat_df.copy()
+            cat_df["no_schema_count"] = 0
+            cat_df["no_price_count"] = 0
+        
+        sort_col = score_col if score_col in cat_df.columns else cat_df.columns[0]
         bottom5 = cat_df.nsmallest(5, sort_col) if sort_col in cat_df.columns else cat_df.head(5)
         for i, row in bottom5.iterrows():
             vals = [
                 str(row.get("category", "-")),
-                str(row.get("count", "-")),
-                str(round(row.get("avg_overall_score", 0), 1)),
+                str(row.get(count_col, "-")),
+                str(round(row.get(score_col, 0), 1)),
                 str(row.get("no_schema_count", "-")),
                 str(row.get("no_price_count", "-")),
             ]
@@ -698,7 +713,8 @@ def generate_report(output_dir: str, log=None) -> str:
                 score = "-"
             # Use reasons column for human-readable reason
             reasons_raw = _clean(row.get("reasons", "")) if "reasons" in cand_df.columns else "-"
-            flags   = _clean(row.get("indexability_flags", "")) if "indexability_flags" in cand_df.columns else "-"
+            # Note: indexability_flags not in manual_review_candidates - use severity column
+            severity = _clean(row.get("severity", "")) if "severity" in cand_df.columns else "-"
             
             # Convert machine-readable reasons to human-readable
             reason_map = {
@@ -728,7 +744,7 @@ def generate_report(output_dir: str, log=None) -> str:
                         parts.append(reason_code)
             
             reason = ", ".join(parts) if parts else "-"
-            _add_table_row(t5, [url, score, reason, flags[:40]], alt=(i % 2 == 1), score_col=1)
+            _add_table_row(t5, [url, score, reason, severity[:40]], alt=(i % 2 == 1), score_col=1)
 
     # ── Snimanje ───────────────────────────────────────────────────────────────
     output_path = os.path.join(output_dir, "audit_report.docx")

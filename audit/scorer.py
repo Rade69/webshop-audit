@@ -313,25 +313,304 @@ def summarize_sitewide_scores(df: pd.DataFrame) -> dict:
 
 def summarize_by_category(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     """
-    If breadcrumb_text exists, infers category from the second breadcrumb segment.
+    If breadcrumb_text exists, infers category using hierarchical approach.
     Returns aggregated scores per category or None if data is insufficient.
+    
+    Hierarchy:
+    1. breadcrumb_text - reverse iteration, skip generic/brand/product names
+    2. URL pattern - extract from URL path with regex patterns
+    3. title/H1 signal - use meaningful words, skip marketing noise
+    4. fallback to "Unknown" (not "Generic")
     """
     if "breadcrumb_text" not in df.columns or df["breadcrumb_text"].isna().all():
         return None
 
-    def infer_category(breadcrumb: Optional[str]) -> str:
-        if not breadcrumb:
-            return "Unknown"
-        parts = [p.strip() for p in breadcrumb.split(">") if p.strip()]
-        # Home > Category > Subcategory > Product — we want index 1 (Category)
-        if len(parts) >= 2:
-            return parts[1]
-        if parts:
-            return parts[0]
+    # Extended generic categories to skip - these don't carry useful information
+    GENERIC_CATEGORIES = {
+        # Generic shop terms
+        "proizvodi", "products", "artikli", "artikal", "item", "items",
+        "shop", "katalog", "catalog", "store", "trgovina", "prodavnica",
+        "home", "početna", "pocetna", "start", "main", "glavna",
+        "all", "svi", "sve", "all products", "svi proizvodi",
+        "new", "novo", "novosti", "new arrivals", "najnovije",
+        "sale", "popust", "akcija", "discount", "snizenje",
+        "best", "najbolje", "top", "featured", "istaknuto",
+        "collection", "kolekcija", "collections", "kolekcije",
+        "category", "kategorija", "categories", "kategorije",
+        "generic", "general", "opšte", "opste", "common",
+    }
+    
+    # Extended brand indicators to skip
+    BRAND_INDICATORS = {
+        "nike", "adidas", "puma", "reebok", "under armour", "ua",
+        "zara", "h&m", "mango", "uniqlo", "levis", "levi's",
+        "calvin klein", "ck", "gucci", "prada", "versace", "armani",
+        "tommy hilfiger", "ralph lauren", "lacoste", "boss", "hugo boss",
+        "converse", "vans", "new balance", "asics", "skechers",
+        "sport vision", "intersport", "decathlon", "sports direct",
+    }
+    
+    # Extended category keywords to look for (positive signals)
+    CATEGORY_KEYWORDS = {
+        # Clothing
+        "tekstil", "odeća", "odeca", "odjeća", "odjeca", "clothing", "apparel",
+        "majice", "t-shirt", "tshirt", "bluze", "blouse", "košulje", "kosulje", "shirts",
+        "haljine", "dresses", "suknje", "skirts", "pantalone", "trousers", "pants",
+        "jakne", "jackets", "kaputi", "coats", "prsluci", "vests", "waistcoats",
+        "duksevi", "hoodies", "dukserice", "sweatshirts", "sweaters", "puloveri",
+        "trenirke", "tracksuits", "trenerke", "sportswear", "sport suit",
+        "donji dio", "bottoms", "gornji dio", "tops", "donje rublje", "underwear",
+        "kupaći", "swimwear", "kupaci", "beachwear", "plažna odjeća", "beach clothing",
+        
+        # Footwear
+        "obuća", "obuca", "footwear", "shoes", "patike", "sneakers", "tenisice",
+        "cipele", "shoes", "cizme", "čizme", "boots", "sandale", "sandals",
+        "čarape", "carape", "socks", "stopala", "foot",
+        
+        # Accessories
+        "torbe", "bags", "torbice", "handbags", "ruksaci", "backpacks",
+        "nakiti", "jewelry", "nakit", "bijuterija", "satovi", "watches",
+        "naočare", "naocare", "glasses", "sunglasses", "sunčane naočare",
+        "kape", "caps", "šeširi", "hats", "marame", "scarves",
+        "remenje", "belts", "kaiševi", "belts",
+        
+        # Sports
+        "sportska oprema", "sports equipment", "sport", "fitness",
+        "biciklističke", "cycling", "bicikl", "bicycle",
+        "trčanje", "running", "trkačke", "running shoes",
+        "teretana", "gym", "fitness", "workout",
+        
+        # Electronics
+        "elektronika", "electronics", "telefon", "phone", "mobitel",
+        "laptop", "tablet", "računar", "racunar", "computer",
+        "audio", "zvuk", "sound", "slušalice", "headphones",
+        
+        # Home & Furniture
+        "nameštaj", "namestaj", "furniture", "djak", "sofa", "krevet", "bed",
+        "kućni tekstil", "home textile", "posteljina", "bedding",
+        "kuhinja", "kitchen", "trpezarija", "dining",
+        
+        # Other
+        "igračke", "toys", "knjige", "books", "hrana", "food", "piće", "drink",
+        "kozmetika", "cosmetics", "parfemi", "perfumes", "lična njega", "personal care",
+    }
+    
+    # Extended product name patterns to skip (too specific)
+    # These are product/collection/model names, NOT categories
+    PRODUCT_PATTERNS = {
+        # Under Armour collection names
+        "unstoppable", "icon", "foundation", "baseline", "essential", "core",
+        "sportstyle", "vanish", "hero", "phantom", "stripe", "precision",
+        "coldgear", "heatgear", "rush", "recovery", "iso-chill",
+        
+        # Nike collection names  
+        "air", "max", "zoom", "fly", " Pegasus", "revolution", "quest",
+        "flex", "react", "invigor", " Odyssey", "Element", " dry",
+        
+        # Puma collection names
+        "stack", "crossback", "vida", "softer", "faster", "cell",
+        
+        # Generic product patterns
+        "seamless", "bra", "logo", "ss", "fleece", "update", "classic",
+        "pro", "basic", "prime", "premium", "elite", "ultra",
+        "boost", "cloud", "limited", "edition", "special", "exclusive",
+        "signature", "original", "authentic", "genuine", "official",
+        "graphic", "print", "stripe", "colorblock", "panel",
+        
+        # Common model suffixes
+        "mid", "low", "high", "retro", "fw", "ss", "ls", "gt",
+    }
+    
+    # Words that are ALWAYS categories (even if they match product patterns)
+    # These take precedence over PRODUCT_PATTERNS
+    # Note: "pro" removed - too ambiguous as standalone word
+    CATEGORY_OVERRIDES = {
+        "bra", "bra i top", "bras",    # Lingerie category, not product
+    }
+    
+    def is_generic(text: str) -> bool:
+        """Check if text contains any generic category word."""
+        if not text:
+            return False
+        text_lower = text.lower()
+        # Check for exact match or contains generic word
+        for gen in GENERIC_CATEGORIES:
+            if gen == text_lower or f" {gen} " in f" {text_lower} ":
+                return True
+        return False
+    
+    def is_brand(text: str) -> bool:
+        """Check if text contains any brand indicator."""
+        if not text:
+            return False
+        text_lower = text.lower()
+        for brand in BRAND_INDICATORS:
+            if brand in text_lower:
+                return True
+        return False
+    
+    def contains_category_keyword(text: str) -> Optional[str]:
+        """Check if text contains any category keyword, return the keyword."""
+        if not text:
+            return None
+        text_lower = text.lower()
+        for kw in CATEGORY_KEYWORDS:
+            if kw in text_lower:
+                return kw
+        return None
+    
+    def extract_category(row: dict) -> str:
+        import re
+        """Extract category using hierarchical approach.
+        
+        Hierarchy:
+        1. breadcrumb_text - reverse iteration, skip generic/brand/product names
+           - Prefer mid-level category over final product name segment
+           - Skip segments that are ALL CAPS (likely product names)
+           - Use category overrides to prevent skipping true categories
+        2. URL pattern - extract from URL path with regex patterns
+        3. title/H1 signal - use meaningful words, skip marketing noise
+        4. fallback to 'Unknown'
+        """
+        
+        # 1. Try breadcrumb_text - look for category keywords
+        breadcrumb = row.get("breadcrumb_text", "")
+        if breadcrumb and not pd.isna(breadcrumb):
+            parts = [p.strip() for p in str(breadcrumb).split(">") if p.strip()]
+            
+            # Search from END to START (most specific to least specific)
+            for part in reversed(parts):
+                part_lower = part.lower()
+                
+                # Skip if empty
+                if not part or len(part) < 2:
+                    continue
+                    
+                # Skip generic
+                if is_generic(part):
+                    continue
+                    
+                # Skip if it's a brand
+                if is_brand(part):
+                    continue
+                
+                # Skip if it looks like a product name
+                # BUT first check if it's a category override (e.g., "Bra" is a category, not product)
+                is_override_category = any(
+                    override in part_lower for override in CATEGORY_OVERRIDES
+                )
+                if not is_override_category and any(pat in part_lower for pat in PRODUCT_PATTERNS):
+                    continue
+                
+                # NEW: Skip if the segment is ALL CAPS (likely a product name, not category)
+                # Exception: common acronyms that could be categories
+                if part.isupper() and len(part) > 3 and part not in ('USA', 'EU', 'UK', 'UN'):
+                    continue
+                
+                # Check for category keywords
+                category_kw = contains_category_keyword(part)
+                if category_kw:
+                    # Return the original part (with proper casing)
+                    return part
+                
+                # If it looks like a reasonable category word
+                # Not too short, not too long, no digits, not all uppercase
+                # Note: use >= 3 not > 3 to allow 3-char category words like "Bra"
+                if (3 <= len(part) < 25 and 
+                    not any(c.isdigit() for c in part) and
+                    not part.isupper() and
+                    not part_lower.endswith(('s', 'es'))):  # Avoid plurals as generic
+                    return part
+        
+        # 2. Try URL pattern with improved regex
+        url = row.get("url", "")
+        if url and not pd.isna(url):
+            url_str = str(url).lower()
+            
+            # Extract path from URL
+            path_match = re.search(r'https?://[^/]+(/[^?#]*)', url_str)
+            if path_match:
+                path = path_match.group(1)
+                
+                # Common category patterns in URLs with regex
+                url_patterns = [
+                    # Clothing patterns
+                    (r'/(majic[aey]|t-shirt|tshirt|bluz[aey])/', 'Majice'),
+                    (r'/(dukseric[aey]|hoodie|sweatshirt|pulover)/', 'Dukserice'),
+                    (r'/(patik[aey]|tenisic[aey]|sneaker|obuca)/', 'Patike'),
+                    (r'/(jakn[aey]|jacket|kaput)/', 'Jakne'),
+                    (r'/(haljin[aey]|dress)/', 'Haljine'),
+                    (r'/(košulj[aey]|kosulj[aey]|shirt)/', 'Košulje'),
+                    (r'/(pantalon[aey]|trousers|pants)/', 'Pantalone'),
+                    (r'/(torba|torbica|bag|ruksak)/', 'Torbe'),
+                    
+                    # Footwear
+                    (r'/(cizam[aey]|čizam[aey]|boot)/', 'Čizme'),
+                    (r'/(cipel[aey]|shoe)/', 'Cipele'),
+                    (r'/(sandala|sandale|sandal)/', 'Sandale'),
+                    
+                    # Accessories
+                    (r'/(nakit|jewelry|bijuterija)/', 'Nakit'),
+                    (r'/(sat|watch)/', 'Satovi'),
+                    (r'/(naočar[aey]|naocar[aey]|glasses)/', 'Naočare'),
+                    
+                    # Sports
+                    (r'/(biciklistick[aey]|cycling|bicycle)/', 'Biciklističke'),
+                    (r'/(sportska|sport|fitness)/', 'Sportska oprema'),
+                    
+                    # Generic category patterns (fallback)
+                    (r'/(tekstil|odeca|odeća|clothing)/', 'Tekstil'),
+                    (r'/(elektronika|electronics)/', 'Elektronika'),
+                    (r'/(namestaj|nameštaj|furniture)/', 'Nameštaj'),
+                ]
+                
+                for pattern, category in url_patterns:
+                    if re.search(pattern, path):
+                        return category
+        
+        # 3. Try title/H1 signal with improved filtering
+        title = row.get("title", "") or row.get("h1", "")
+        if title and not pd.isna(title):
+            title_str = str(title)
+            
+            # Skip words that are too common or marketing
+            skip_words = {
+                "proizvod", "proizvodi", "product", "products", 
+                "artikal", "artikli", "item", "items",
+                "kupite", "kupi", "buy", "purchase", "shop",
+                "online", "prodavnica", "store", "trgovina",
+                "novo", "new", "akcija", "sale", "popust", "discount",
+                "besplatna", "free", "brza", "fast", "express",
+                "kvalitet", "quality", "premium", "luxury", "luksuz",
+            }
+            
+            # Also skip brand names
+            skip_words.update(BRAND_INDICATORS)
+            
+            words = re.findall(r'\b[\w-]+\b', title_str)
+            for word in words[:5]:  # Check first 5 words
+                cleaned = word.strip("-|,.:;()").lower()
+                
+                # Skip if too short, skip word, or generic
+                if len(cleaned) < 4 or cleaned in skip_words or is_generic(cleaned):
+                    continue
+                    
+                # Check if it's a category keyword
+                category_kw = contains_category_keyword(cleaned)
+                if category_kw:
+                    return category_kw.title()
+                
+                # If it looks like a reasonable category
+                if (4 <= len(cleaned) <= 20 and 
+                    not any(c.isdigit() for c in cleaned) and
+                    not cleaned.isnumeric()):
+                    return cleaned.title()
+        
+        # 4. Fallback to "Unknown" (not "Generic")
         return "Unknown"
 
     df = df.copy()
-    df["_category"] = df["breadcrumb_text"].apply(infer_category)
+    df["_category"] = df.apply(extract_category, axis=1)
 
     group = df.groupby("_category").agg(
         product_count=("url", "count"),
