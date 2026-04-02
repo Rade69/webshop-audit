@@ -31,6 +31,7 @@ from datetime import datetime
 from PyQt6.QtCore import pyqtSignal
 
 from gui.controllers.review_controller import ReviewController
+from gui.adapters.review_adapter import ReviewAdapter
 
 
 class ReviewTableModel(QAbstractTableModel):
@@ -40,11 +41,16 @@ class ReviewTableModel(QAbstractTableModel):
     Displays: URL/Title, Reason, Overall Score, Flags, Status, Has Note.
     """
 
-    def __init__(self, data=None, parent=None):
+    def __init__(self, data=None, adapter=None, parent=None):
         super().__init__(parent)
         self._data = data if data is not None else []
+        self._adapter = adapter
         self._columns = ["url", "severity", "reasons", "overall_score", "status", "has_note"]
         self._headers = ["Proizvod", "Prioritet", "Razlozi", "Ocjena", "Status", "Bilješka"]  # "Product", "Severity", "Reasons", "Score", "Status", "Note"
+
+    def set_adapter(self, adapter: ReviewAdapter):
+        """Set the adapter instance."""
+        self._adapter = adapter
 
     def update_data(self, data):
         """Update table data."""
@@ -73,50 +79,12 @@ class ReviewTableModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.DisplayRole:
             if col_name == "url":
-                url = str(candidate.get("url", "") or "")
-                title = str(candidate.get("title", "") or "")
-                if title:
-                    return title[:40] + "..." if len(title) > 40 else title
-                return url[:40] + "..." if len(url) > 40 else url
+                # Adapter is always set - use only adapter
+                return self._adapter.get_display_title(candidate)
             elif col_name == "severity":
-                severity = candidate.get("severity", "")
-                # Map severity to Serbian
-                severity_map = {
-                    "CRITICAL": "KRITIČNO",
-                    "HIGH": "VISOKO",
-                    "MEDIUM": "SREDNJE",
-                    "LOW": "NISKO"
-                }
-                return severity_map.get(severity, severity)
+                return self._adapter.get_formatted_severity(candidate)
             elif col_name == "reasons":
-                reasons = candidate.get("reasons", "")
-                # Handle NaN/None values
-                if pd.isna(reasons) or not reasons:
-                    return "-"
-                
-                # Convert to string if it's not already
-                reasons_str = str(reasons)
-                if reasons_str:
-                    # Show first reason only in table
-                    first_reason = reasons_str.split(", ")[0]
-                    reason_map = {
-                        "fetch-error": "Fetch greška",
-                        "non-200": "Status nije 200",
-                        "not-product-page": "Nije produktna stranica",
-                        "js-rendered-high": "JS render (visok rizik)",
-                        "js-rendered-medium": "JS render (srednji rizik)",
-                        "js-rendered": "JS render",
-                        "noindex": "Noindex",
-                        "canonical-mismatch": "Canonical mismatch",
-                        "missing-price-critical": "Nema cijene (kritično)",
-                        "missing-schema-critical": "Nema sheme (kritično)",
-                        "missing-price": "Nema cijene",
-                        "missing-schema": "Nema sheme",
-                        "low-content": "Malo sadržaja",
-                        "low-score": "Nizak score",
-                    }
-                    return reason_map.get(first_reason, first_reason)
-                return "-"
+                return self._adapter.get_formatted_reasons(candidate)
             elif col_name == "overall_score":
                 return candidate.get("overall_score", "-")
             elif col_name == "status":
@@ -125,27 +93,8 @@ class ReviewTableModel(QAbstractTableModel):
                 return "✓" if candidate.get("note") else "-"
 
         elif role == Qt.ItemDataRole.BackgroundRole:
-            # First priority: severity color
-            severity = candidate.get("severity", "")
-            if severity == "CRITICAL":
-                return QColor("#ffebee")  # Light red
-            elif severity == "HIGH":
-                return QColor("#fff3cd")  # Light orange
-            elif severity == "MEDIUM":
-                return QColor("#fff8e1")  # Light yellow
-            elif severity == "LOW":
-                return QColor("#e3f2fd")  # Light blue
-            
-            # Fallback: status color
-            status = candidate.get("status", "pending")
-            if status == "needs_fix":
-                return QColor("#ffebee")  # Light red
-            elif status == "reviewed":
-                return QColor("#e8f5e9")  # Light green
-            elif status == "fixed":
-                return QColor("#e3f2fd")  # Light blue
-            elif status == "pending":
-                return QColor("#fafafa")  # Light gray
+            color_hex = self._adapter.get_row_color(candidate) if self._adapter else None
+            return QColor(color_hex) if color_hex else None
 
         elif role == Qt.ItemDataRole.TextAlignmentRole:
             if col_name in ["severity", "overall_score", "status", "has_note"]:
@@ -214,6 +163,7 @@ class ReviewQueueTab(QWidget):
         super().__init__(parent)
         self.review_controller = review_controller
         self._current_url = ""
+        self._adapter = None
 
         # UI setup
         self._setup_ui()
@@ -481,6 +431,11 @@ class ReviewQueueTab(QWidget):
     def _on_queue_updated(self):
         """Handle queue updated signal."""
         candidates = self.review_controller.get_candidates()
+        
+        # Create adapter and set on model
+        self._adapter = ReviewAdapter(candidates)
+        self.table_model.set_adapter(self._adapter)
+        
         self.table_model.update_data(candidates)
         self._update_summary()
 
@@ -512,58 +467,10 @@ class ReviewQueueTab(QWidget):
         self.detail_title.setText(str(candidate.get("title", "-")))
         self.detail_score.setText(str(candidate.get("overall_score", "-")))
 
-        # Severity and reasons
-        severity = candidate.get("severity", "")
-        reasons = candidate.get("reasons", "")
-        
-        # Map severity to Serbian
-        severity_map = {
-            "CRITICAL": "KRITIČNO",
-            "HIGH": "VISOKO",
-            "MEDIUM": "SREDNJE",
-            "LOW": "NISKO"
-        }
-        severity_display = severity_map.get(severity, severity)
-        
-        # Map reasons to Serbian
-        reason_map = {
-            "fetch-error": "Fetch greška",
-            "non-200": "Status nije 200",
-            "not-product-page": "Nije produktna stranica",
-            "js-rendered-high": "JS render (visok rizik)",
-            "js-rendered-medium": "JS render (srednji rizik)",
-            "js-rendered": "JS render",
-            "noindex": "Noindex",
-            "canonical-mismatch": "Canonical mismatch",
-            "missing-price-critical": "Nema cijene (kritično)",
-            "missing-schema-critical": "Nema sheme (kritično)",
-            "missing-price": "Nema cijene",
-            "missing-schema": "Nema sheme",
-            "low-content": "Malo sadržaja",
-            "low-score": "Nizak score",
-        }
-        
-        reason_list = []
-        if severity_display:
-            reason_list.append(f"Prioritet: {severity_display}")
-        
-        # Handle NaN/None values
-        if not pd.isna(reasons) and reasons:
-            reasons_str = str(reasons)
-            for reason in reasons_str.split(", "):
-                if reason in reason_map:
-                    reason_list.append(reason_map[reason])
-                elif reason:
-                    reason_list.append(reason)
-        
-        # Fallback to old method if no new data
-        if not reason_list:
-            reason = self.review_controller.get_reason(candidate)
-            self.detail_reason.setText(reason)
-            self.detail_flags.setText("Nema")
-        else:
-            self.detail_reason.setText("\n".join(reason_list))
-            self.detail_flags.setText("")
+        # Use adapter for reasons formatting - adapter is always set
+        formatted_reasons = self._adapter.get_display_reason_for_details(candidate)
+        self.detail_reason.setText(formatted_reasons)
+        self.detail_flags.setText("")
 
         # Note
         note = self.review_controller.get_note(url)

@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal
 
 from gui.controllers.results_controller import ResultsController
+from gui.adapters.results_adapter import ResultsAdapter
 
 
 class ResultsTableModel(QAbstractTableModel):
@@ -43,9 +44,10 @@ class ResultsTableModel(QAbstractTableModel):
     Overall Score, Flags, Review Status.
     """
 
-    def __init__(self, data=None, parent=None):
+    def __init__(self, data=None, adapter=None, parent=None):
         super().__init__(parent)
         self._data = data if data is not None else []
+        self._adapter = adapter
         self._columns = [
             "title",
             "catalog_score",
@@ -64,6 +66,10 @@ class ResultsTableModel(QAbstractTableModel):
             "Oznake",     # "Flags"
             "Revizija"    # "Review"
         ]
+
+    def set_adapter(self, adapter: ResultsAdapter):
+        """Set the adapter instance."""
+        self._adapter = adapter
 
     def update_data(self, data):
         """Update table data."""
@@ -92,37 +98,23 @@ class ResultsTableModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.DisplayRole:
             if col_name == "title":
-                title = str(product.get("title", "") or product.get("url", "") or "")
+                # Adapter is always set when data exists - no fallback needed
+                title = self._adapter.get_value(product, "title", "") if self._adapter else str(product.get("title", "") or product.get("url", "") or "")
                 return title[:50] + "..." if len(title) > 50 else title
             elif col_name in ["catalog_score", "machine_score", "commerce_score", "overall_score"]:
-                return product.get(col_name, "-")
+                value = self._adapter.get_value(product, col_name) if self._adapter else product.get(col_name, "-")
+                return value if value is not None else "-"
             elif col_name == "flags":
-                flags = []
-                if product.get("flag_js_rendered"):
-                    flags.append("JS")
-                if product.get("flag_noindex"):
-                    flags.append("noindex")
-                if product.get("flag_canonical_mismatch"):
-                    flags.append("no-canonical")
-                if product.get("suspicious_price_missing"):
-                    flags.append("no-price")
-                if product.get("suspicious_schema_missing"):
-                    flags.append("no-schema")
+                # Adapter is always set - use only adapter path
+                flags = self._adapter.get_flags_list(product) if self._adapter else []
                 return ", ".join(flags) if flags else "-"
             elif col_name == "review_status":
-                return product.get("review_status", "-")
+                value = self._adapter.get_value(product, "review_status") if self._adapter else product.get("review_status", "-")
+                return value if value else "-"
 
         elif role == Qt.ItemDataRole.BackgroundRole:
-            # Color coding based on issues
-            has_critical = product.get("flag_noindex") or (
-                product.get("suspicious_price_missing") and product.get("suspicious_schema_missing")
-            )
-            has_warning = product.get("flag_js_rendered") or product.get("flag_canonical_mismatch")
-
-            if has_critical:
-                return QColor("#ffebee")  # Light red
-            elif has_warning:
-                return QColor("#fff8e1")  # Light yellow
+            color_hex = self._adapter.get_row_background_color(product) if self._adapter else None
+            return QColor(color_hex) if color_hex else None
 
         elif role == Qt.ItemDataRole.TextAlignmentRole:
             if col_name in ["catalog_score", "machine_score", "commerce_score", "overall_score"]:
@@ -150,6 +142,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._adapter = None
         self._min_score = 0
         self._max_score = 100
         self._filter_missing_schema = False
@@ -160,6 +153,10 @@ class ResultsFilterModel(QSortFilterProxyModel):
         self._show_non_product = True
         self._search_text = ""
         self._category = ""
+
+    def set_adapter(self, adapter: ResultsAdapter):
+        """Set the adapter instance for filtering."""
+        self._adapter = adapter
 
     def set_filters(self, min_score=0, max_score=100, missing_schema=False,
                     missing_price=False, noindex=False, canonical_mismatch=False,
@@ -185,50 +182,57 @@ class ResultsFilterModel(QSortFilterProxyModel):
 
         product = source_model.get_product(source_row)
 
+        # Adapter is always set in this flow - use only adapter-based filtering
+        return self._filter_with_adapter(product)
+
+    def _filter_with_adapter(self, product: dict) -> bool:
+        """Filter using adapter methods."""
         # Score filter
-        overall = product.get("overall_score", 0)
+        overall = self._adapter.get_value(product, 'overall_score', 0)
+        if overall is None:
+            overall = 0
         if overall < self._min_score or overall > self._max_score:
             return False
 
         # Missing schema filter
-        if self._filter_missing_schema and product.get("schema_product_present"):
+        if self._filter_missing_schema and self._adapter.get_value(product, 'schema_product_present', False):
             return False
 
         # Missing price filter
         if self._filter_missing_price:
-            has_price = product.get("html_price_text") or product.get("schema_price")
+            has_price = self._adapter.get_value(product, 'html_price_text') or self._adapter.get_value(product, 'schema_price')
             if has_price:
                 return False
 
         # Noindex filter
-        if self._filter_noindex and not product.get("flag_noindex"):
+        if self._filter_noindex and not self._adapter.get_value(product, 'flag_noindex', False):
             return False
 
         # Canonical issues filter
-        if self._filter_canonical_mismatch and not product.get("flag_canonical_mismatch"):
+        if self._filter_canonical_mismatch and not self._adapter.get_value(product, 'flag_canonical_mismatch', False):
             return False
 
         # Shortlist only filter
-        if self._filter_shortlist_only and not product.get("candidate"):
+        if self._filter_shortlist_only and not self._adapter.get_value(product, 'candidate', False):
             return False
 
         # Non-product filter
-        if not self._show_non_product and not product.get("is_likely_product_page", True):
+        if not self._show_non_product and not self._adapter.get_value(product, 'is_likely_product_page', True):
             return False
 
         # Category filter
         if self._category:
-            breadcrumb = product.get("breadcrumb_text", "")
-            if self._category not in breadcrumb:
+            breadcrumb = self._adapter.get_value(product, 'breadcrumb_text', '')
+            if self._category not in str(breadcrumb):
                 return False
 
         # Search filter
         if self._search_text:
             search_fields = [
-                str(product.get("url", "")),
-                str(product.get("title", "")),
-                str(product.get("schema_sku", "")),
-                str(product.get("schema_gtin", ""))
+                str(self._adapter.get_value(product, "url", "")),
+                str(self._adapter.get_value(product, "title", "")),
+                str(self._adapter.get_value(product, "schema_sku", "")),
+                str(self._adapter.get_value(product, "schema_gtin", ""))
             ]
             if not any(self._search_text in f.lower() for f in search_fields):
                 return False
@@ -275,6 +279,7 @@ class ResultsTab(QWidget):
         super().__init__(parent)
         self.results_controller = results_controller
         self._current_url = ""
+        self._adapter = None
 
         # UI setup
         self._setup_ui()
@@ -595,15 +600,24 @@ class ResultsTab(QWidget):
     def _on_results_loaded(self):
         """Handle results loaded signal."""
         df = self.results_controller.get_filtered_data()
-        self.table_model.update_data(df.to_dict('records'))
+        
+        # Create adapter from DataFrame
+        self._adapter = ResultsAdapter(df)
+        
+        # Set adapter on models
+        self.table_model.set_adapter(self._adapter)
+        self.filter_model.set_adapter(self._adapter)
+        
+        # Update table with data through adapter
+        self.table_model.update_data(self._adapter.to_dict_list())
         self._update_count(len(df))
 
         # Enable export and report as soon as data is loaded
         self.export_btn.setEnabled(True)
         self.report_btn.setEnabled(True)
 
-        # Update category dropdown
-        categories = self.results_controller.get_categories()
+        # Update category dropdown using adapter
+        categories = self._adapter.get_categories()
         self.category_combo.clear()
         self.category_combo.addItem("Sve", "")  # "All"
         for cat in categories:
@@ -663,69 +677,51 @@ class ResultsTab(QWidget):
 
     def _show_details(self, product: dict):
         """Show product details in panel."""
+        # Adapter is always set - use only adapter-based display
+        self._show_details_with_adapter(product)
+
+    def _show_details_with_adapter(self, product: dict):
+        """Show product details using adapter."""
         # Page info
-        self.detail_url.setText(f'<a href="{product.get("url", "")}">{product.get("url", "-")}</a>')
-        self.detail_title.setText(str(product.get("title", "-")))
-        self.detail_h1.setText(str(product.get("h1", "-")))
-        self.detail_canonical.setText(str(product.get("canonical", "-")))
-        self.detail_robots.setText(str(product.get("robots_meta", "-")))
+        url = self._adapter.get_value(product, "url", "-")
+        self.detail_url.setText(f'<a href="{url}">{url}</a>')
+        self.detail_title.setText(self._adapter.get_formatted_value(product, "title"))
+        self.detail_h1.setText(self._adapter.get_formatted_value(product, "h1"))
+        self.detail_canonical.setText(self._adapter.get_formatted_value(product, "canonical"))
+        self.detail_robots.setText(self._adapter.get_formatted_value(product, "robots_meta"))
 
-        def _yn(val) -> str:
-            """Pretvara truthy vrijednost u Da/Ne, ignorira pandas NaN/None."""
-            if val is None:
-                return "Ne"
-            try:
-                import math
-                if isinstance(val, float) and math.isnan(val):
-                    return "Ne"
-            except Exception:
-                pass
-            return "Da" if val else "Ne"
+        # Schema
+        self.detail_schema_product.setText(self._yes_no(self._adapter.get_value(product, "schema_product_present")))
+        self.detail_schema_offer.setText(self._yes_no(self._adapter.get_value(product, "schema_offer_present")))
+        self.detail_price_schema.setText(self._adapter.get_formatted_value(product, "schema_price") or "nije pronađeno")
+        self.detail_currency.setText(self._adapter.get_formatted_value(product, "schema_currency") or "-")
+        self.detail_availability.setText(self._adapter.get_formatted_value(product, "schema_availability") or "-")
+        self.detail_sku.setText(self._adapter.get_formatted_value(product, "schema_sku") or "-")
+        self.detail_gtin.setText(self._adapter.get_formatted_value(product, "schema_gtin") or "-")
+        self.detail_brand.setText(self._adapter.get_formatted_value(product, "schema_brand") or "-")
 
-        def _val(key, default="-") -> str:
-            v = product.get(key)
-            if v is None:
-                return default
-            try:
-                import math
-                if isinstance(v, float) and math.isnan(v):
-                    return default
-            except Exception:
-                pass
-            s = str(v).strip()
-            return s if s and s.lower() != "nan" else default
+        # Signals
+        self.detail_price_html.setText(self._adapter.get_formatted_value(product, "html_price_text") or "nije pronađeno")
+        self.detail_shipping.setText(self._yes_no(self._adapter.get_value(product, "shipping_signal")))
+        self.detail_returns.setText(self._yes_no(self._adapter.get_value(product, "returns_signal")))
+        self.detail_images.setText(self._adapter.get_formatted_value(product, "image_count") or "0")
+        self.detail_text_length.setText(self._adapter.get_formatted_value(product, "visible_text_length") or "0")
 
-        # Schema — ispravna imena kolona iz extractor.py
-        self.detail_schema_product.setText(_yn(product.get("schema_product_present")))
-        self.detail_schema_offer.setText(_yn(product.get("schema_offer_present")))
-        self.detail_price_schema.setText(_val("schema_price", "nije pronađeno"))
-        self.detail_currency.setText(_val("schema_currency"))
-        self.detail_availability.setText(_val("schema_availability"))
-        self.detail_sku.setText(_val("schema_sku"))
-        self.detail_gtin.setText(_val("schema_gtin"))
-        self.detail_brand.setText(_val("schema_brand"))
-
-        # Signals — ispravna imena kolona
-        self.detail_price_html.setText(_val("html_price_text", "nije pronađeno"))
-        self.detail_shipping.setText(_yn(product.get("shipping_signal")))
-        self.detail_returns.setText(_yn(product.get("returns_signal")))
-        self.detail_images.setText(_val("image_count", "0"))
-        self.detail_text_length.setText(_val("visible_text_length", "0"))
-
-        # Flags — iz indexability_flags kolone i boolean signala
-        flags = []
-        if product.get("is_likely_js_rendered"):
-            flags.append("JS renderovano")
-        idx_flags = _val("indexability_flags", "")
-        if "noindex" in idx_flags.lower():
-            flags.append("Noindex")
-        if "canonical" in idx_flags.lower():
-            flags.append("Canonical mismatch")
-        if not product.get("schema_product_present"):
-            flags.append("Nema sheme")
-        if not product.get("schema_price") and _val("schema_price", "") == "-":
-            flags.append("Nema cijene u schema")
+        # Flags using adapter
+        flags = self._adapter.get_detailed_flags_list(product)
         self.detail_flags.setText(", ".join(flags) if flags else "Nema")
+
+    def _yes_no(self, val) -> str:
+        """Convert truthy value to Da/Ne."""
+        if val is None:
+            return "Ne"
+        try:
+            import math
+            if isinstance(val, float) and math.isnan(val):
+                return "Ne"
+        except Exception:
+            pass
+        return "Da" if val else "Ne"
 
     def _on_open_page(self):
         """Open selected page in browser."""
