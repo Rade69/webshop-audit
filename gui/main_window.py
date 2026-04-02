@@ -1,7 +1,7 @@
 """
 Glavni prozor GUI aplikacije.
 
-Odgovornost: 
+Odgovornost:
 - Kreiranje i upravljanje svim tabovima
 - Kreiranje i upravljanje svim kontrolerima
 - Posredovanje u inter-tab komunikaciji
@@ -9,6 +9,7 @@ Odgovornost:
 
 Ovo je jedino mjesto gdje se tabovi kreiraju i vežu jedni za druge.
 """
+
 from PyQt6.QtCore import Qt, pyqtSlot
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -26,6 +27,8 @@ from gui.tabs.results_tab import ResultsTab
 from gui.tabs.review_queue_tab import ReviewQueueTab
 
 from gui.styles.theme import apply_theme
+from config import PHASE_DISPLAY_NAMES
+from config import PHASE_DISPLAY_NAMES
 
 
 class MainWindow(QMainWindow):
@@ -66,19 +69,20 @@ class MainWindow(QMainWindow):
 
         # Apply dark theme
         from PyQt6.QtWidgets import QApplication
+
         apply_theme(QApplication.instance())
 
     def _create_tabs(self):
         """Kreira sve tabove i povezuje ih sa kontrolerima."""
         # Input tab prima audit_controller za pokretanje run-a
         self.input_tab = InputTab(audit_controller=self.audit_controller)
-        
+
         # Run tab prima audit_controller za prikaz progressa
         self.run_tab = RunTab(audit_controller=self.audit_controller)
-        
+
         # Results tab prima results_controller za prikaz rezultata
         self.results_tab = ResultsTab(results_controller=self.results_controller)
-        
+
         # Review Queue tab prima review_controller za prikaz liste za reviziju
         self.review_tab = ReviewQueueTab(review_controller=self.review_controller)
 
@@ -88,9 +92,9 @@ class MainWindow(QMainWindow):
         self.tab_widget.setTabPosition(QTabWidget.TabPosition.North)
 
         # Dodaj tabove
-        self.tab_widget.addTab(self.input_tab, "Unos")          # "Input"
-        self.tab_widget.addTab(self.run_tab, "Pokretanje")       # "Run"
-        self.tab_widget.addTab(self.results_tab, "Rezultati")    # "Results"
+        self.tab_widget.addTab(self.input_tab, "Unos")  # "Input"
+        self.tab_widget.addTab(self.run_tab, "Pokretanje")  # "Run"
+        self.tab_widget.addTab(self.results_tab, "Rezultati")  # "Results"
         self.tab_widget.addTab(self.review_tab, "Red za reviziju")  # "Review Queue"
 
         self.setCentralWidget(self.tab_widget)
@@ -111,22 +115,22 @@ class MainWindow(QMainWindow):
 
     def _connect_inter_tab_signals(self):
         """Povezuje signale između tabova i kontrolera."""
-        
+
         # Input tab - start scan request
         self.input_tab.start_scan_requested.connect(self._on_start_scan_requested)
-        
+
         # Nakon završetka runa — automatski prebaci na Results tab
         self.audit_controller.run_completed.connect(self._on_run_completed)
-        
+
         # Greška tokom runa
         self.audit_controller.run_failed.connect(self._on_run_failed)
-        
+
         # Progress updates - ažuriraj status bar
         self.audit_controller.progress_updated.connect(self._on_progress_updated)
-        
+
         # Phase changes - ažuriraj status bar
         self.audit_controller.phase_changed.connect(self._on_phase_changed)
-        
+
         # Mark for Review u Results tabu dodaje u Review Queue
         self.results_controller.mark_for_review_requested.connect(
             self.review_controller.add_to_queue
@@ -136,19 +140,21 @@ class MainWindow(QMainWindow):
     def _on_run_completed(self, output_dir: str):
         """
         Handler za završetak run-a.
-        
+
         Prebacuje na Results tab i učitava rezultate.
         """
         # Učitaj rezultate u Results controller
         self.results_controller.load_results(output_dir)
-        
+
         # Učitaj queue u Review controller
         self.review_controller.load_queue(output_dir)
-        
+
         # Prebaci na Results tab
         self.tab_widget.setCurrentWidget(self.results_tab)
-        
-        self.status_bar.showMessage(f"Završeno — {output_dir}")  # "Completed — {output_dir}"
+
+        self.status_bar.showMessage(
+            f"Završeno — {output_dir}"
+        )  # "Completed — {output_dir}"
 
     @pyqtSlot(str)
     def _on_run_failed(self, error: str):
@@ -159,34 +165,27 @@ class MainWindow(QMainWindow):
     def _on_progress_updated(self, processed: int, total: int):
         """Handler za ažuriranje progressa."""
         if total > 0:
-            self.status_bar.showMessage(f"Skeniranje... {processed}/{total}")  # "Scanning... {processed}/{total}"
+            self.status_bar.showMessage(
+                f"Skeniranje... {processed}/{total}"
+            )  # "Scanning... {processed}/{total}"
 
     @pyqtSlot(str)
     def _on_phase_changed(self, phase: str):
         """Handler za promjenu faze."""
-        phase_display = {
-            "url_collection": "Prikupljanje URL-ova",
-            "fetch": "Preuzimanje stranica",
-            "parse": "Parsiranje",
-            "score": "Bodovanje",
-            "shortlist": "Kratka lista",
-            "export": "Izvoz",
-            "done": "Završeno"
-        }.get(phase, phase)
-        
+        phase_display = PHASE_DISPLAY_NAMES.get(phase, phase)
         self.status_bar.showMessage(phase_display)
 
     @pyqtSlot(dict)
     def _on_start_scan_requested(self, config: dict):
         """
         Handler za zahtjev za pokretanje scan-a.
-        
+
         Pokreće audit run i prebacuje na Run tab.
         """
         # Start the audit run through controller
         self.audit_controller.start_run(config)
-        
+
         # Switch to Run tab
         self.tab_widget.setCurrentWidget(self.run_tab)
-        
+
         self.status_bar.showMessage("Pokretanje skeniranja...")  # "Starting scan..."

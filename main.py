@@ -6,11 +6,14 @@ Usage examples:
   python main.py --sitemap https://example.com/sitemap.xml --max-urls 300
   python main.py --domain https://example.com --max-urls 300
   python main.py --urls-file inputs/urls.txt --delay 0.5
+  python main.py --diff-runs --old-output outputs/run1 --new-output outputs/run2
 """
 
 import argparse
 import os
 import sys
+
+import pandas as pd
 
 from audit.pipeline import run_audit
 from config import DEFAULT_DELAY, DEFAULT_OUTPUT_DIR
@@ -27,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     source.add_argument("--domain", metavar="URL", help="Shop domain — sitemap will be auto-discovered")
     source.add_argument("--urls-file", metavar="FILE", help="Path to .txt or .csv file with product URLs")
 
+    # Diff mode
+    diff_group = parser.add_argument_group("Run comparison mode")
+    diff_group.add_argument("--diff-runs", action="store_true", help="Compare two audit runs instead of running new audit")
+    diff_group.add_argument("--old-output", metavar="DIR", help="Path to older run's output directory (for --diff-runs)")
+    diff_group.add_argument("--new-output", metavar="DIR", help="Path to newer run's output directory (for --diff-runs)")
+
     parser.add_argument("--max-urls", type=int, default=None, help="Maximum number of URLs to process")
     parser.add_argument("--generate-report", metavar="OUTPUT_DIR",
                         help="Generate Word report from existing output dir (skips audit)")
@@ -37,6 +46,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir", default=DEFAULT_OUTPUT_DIR,
         help=f"Output directory (default: {DEFAULT_OUTPUT_DIR})"
+    )
+    parser.add_argument(
+        "--compare-with", metavar="DIR",
+        help="Compare this run with a previous run's output directory"
     )
 
     return parser.parse_args()
@@ -50,6 +63,75 @@ def main():
         from audit.report_generator import generate_report
         path = generate_report(args.generate_report)
         print(f"Izvještaj sačuvan: {path}")
+        return
+
+    # Diff mode: compare two existing runs
+    if args.diff_runs:
+        if not args.old_output or not args.new_output:
+            print("ERROR: --diff-runs requires both --old-output and --new-output")
+            sys.exit(1)
+        
+        from audit.run_diff import compare_runs, summary_to_dict, url_diffs_to_dataframe
+        from audit.exporters import export_run_diff_summary, export_run_diff_urls, export_run_diff_categories
+        
+        if not os.path.isdir(args.old_output):
+            print(f"ERROR: Old output directory not found: {args.old_output}")
+            sys.exit(1)
+        if not os.path.isdir(args.new_output):
+            print(f"ERROR: New output directory not found: {args.new_output}")
+            sys.exit(1)
+        
+        print(f"\n{'='*60}")
+        print(f"  WebshopAudit — Run Comparison")
+        print(f"{'='*60}")
+        print(f"  Old run: {args.old_output}")
+        print(f"  New run: {args.new_output}")
+        print(f"{'='*60}\n")
+        
+        try:
+            summary, url_diffs = compare_runs(args.old_output, args.new_output)
+            
+            # Export diff outputs to new run's directory
+            diff_dict = summary_to_dict(summary)
+            export_run_diff_summary(diff_dict, os.path.join(args.new_output, "run_diff_summary.json"))
+            print(f"  Exported: run_diff_summary.json")
+            
+            diff_df = url_diffs_to_dataframe(url_diffs)
+            export_run_diff_urls(diff_df, os.path.join(args.new_output, "run_diff_urls.csv"))
+            print(f"  Exported: run_diff_urls.csv ({len(url_diffs)} URLs)")
+            
+            if summary.category_changes:
+                cat_diff_df = pd.DataFrame.from_dict(summary.category_changes, orient="index").reset_index().rename(columns={"index": "category"})
+                export_run_diff_categories(cat_diff_df, os.path.join(args.new_output, "run_diff_categories.csv"))
+                print(f"  Exported: run_diff_categories.csv ({len(summary.category_changes)} categories)")
+            
+            # Print summary
+            print(f"\n{'='*60}")
+            print(f"  DIFF SUMMARY")
+            print(f"{'='*60}")
+            print(f"  Score changes:")
+            print(f"    Overall:  {summary.avg_overall_delta:+.1f}")
+            print(f"    Catalog:  {summary.avg_catalog_delta:+.1f}")
+            print(f"    Machine:  {summary.avg_machine_delta:+.1f}")
+            print(f"    Commerce: {summary.avg_commerce_delta:+.1f}")
+            print(f"\n  URL status:")
+            print(f"    Unchanged:  {summary.unchanged_count}")
+            print(f"    Improved:   {summary.improved_count}")
+            print(f"    Degraded:   {summary.degraded_count}")
+            print(f"    New URLs:   {summary.new_url_count}")
+            print(f"    Removed:    {summary.removed_url_count}")
+            print(f"\n  Issues:")
+            print(f"    Critical/High (old): {summary.old_critical_high_count}")
+            print(f"    Critical/High (new): {summary.new_critical_high_count}")
+            print(f"    Change: {summary.critical_high_delta:+d}")
+            print(f"\n  Issues resolved: {summary.resolved_issues_count}")
+            print(f"  New issues:      {summary.new_issues_count}")
+            print(f"{'='*60}\n")
+            
+        except Exception as e:
+            print(f"ERROR: Run comparison failed: {e}")
+            sys.exit(1)
+        
         return
 
     if not args.sitemap and not args.domain and not getattr(args, "urls_file", None):
@@ -66,7 +148,7 @@ def main():
         "max_urls": args.max_urls,
         "delay": args.delay,
     }
-    
+
     # Determine input source
     if args.urls_file:
         config["input_file"] = args.urls_file
@@ -74,6 +156,15 @@ def main():
         config["domain"] = args.domain
     elif args.sitemap:
         config["sitemap_url"] = args.sitemap
+
+    # Optional: compare with previous run
+    if args.compare_with:
+        if not os.path.isdir(args.compare_with):
+            print(f"WARNING: Compare directory not found: {args.compare_with}")
+            print("  Running audit without comparison.")
+        else:
+            config["compare_with_previous"] = args.compare_with
+            print(f"  Will compare with: {args.compare_with}")
 
     # Use shared pipeline - the same function that GUI uses
     result = run_audit(config=config)
@@ -87,6 +178,8 @@ def main():
     print(f"  Errors               : {result['errors']}")
     print(f"  Review candidates    : {result['candidates']}")
     print(f"\n  Outputs saved to: {result['output_dir']}")
+    if args.compare_with and os.path.isdir(args.compare_with):
+        print(f"  Diff outputs saved to: {result['output_dir']}")
     print(f"{'='*60}\n")
 
 

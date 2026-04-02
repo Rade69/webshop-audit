@@ -4,10 +4,20 @@ Results tab for displaying audit results.
 Responsibility: Working screen for viewing, filtering, and analyzing
 audit results. Shows table with scores, details panel, and actions.
 """
+
 import csv
 import os
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSlot, QSortFilterProxyModel, QUrl, QThread, pyqtSignal
+from PyQt6.QtCore import (
+    Qt,
+    QAbstractTableModel,
+    QModelIndex,
+    pyqtSlot,
+    QSortFilterProxyModel,
+    QUrl,
+    QThread,
+    pyqtSignal,
+)
 from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QFileDialog,
@@ -55,16 +65,16 @@ class ResultsTableModel(QAbstractTableModel):
             "commerce_score",
             "overall_score",
             "flags",
-            "review_status"
+            "review_status",
         ]
         self._headers = [
-            "Naslov",     # "Title"
-            "Katalog",    # "Catalog"
-            "Mašina",     # "Machine"
-            "Commerce",   # "Commerce"
-            "Ukupno",     # "Overall"
-            "Oznake",     # "Flags"
-            "Revizija"    # "Review"
+            "Naslov",  # "Title"
+            "Katalog",  # "Catalog"
+            "Mašina",  # "Machine"
+            "Commerce",  # "Commerce"
+            "Ukupno",  # "Overall"
+            "Oznake",  # "Flags"
+            "Revizija",  # "Review"
         ]
 
     def set_adapter(self, adapter: ResultsAdapter):
@@ -99,25 +109,51 @@ class ResultsTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             if col_name == "title":
                 # Adapter is always set when data exists - no fallback needed
-                title = self._adapter.get_value(product, "title", "") if self._adapter else str(product.get("title", "") or product.get("url", "") or "")
+                title = (
+                    self._adapter.get_value(product, "title", "")
+                    if self._adapter
+                    else str(product.get("title", "") or product.get("url", "") or "")
+                )
                 return title[:50] + "..." if len(title) > 50 else title
-            elif col_name in ["catalog_score", "machine_score", "commerce_score", "overall_score"]:
-                value = self._adapter.get_value(product, col_name) if self._adapter else product.get(col_name, "-")
+            elif col_name in [
+                "catalog_score",
+                "machine_score",
+                "commerce_score",
+                "overall_score",
+            ]:
+                value = (
+                    self._adapter.get_value(product, col_name)
+                    if self._adapter
+                    else product.get(col_name, "-")
+                )
                 return value if value is not None else "-"
             elif col_name == "flags":
                 # Adapter is always set - use only adapter path
                 flags = self._adapter.get_flags_list(product) if self._adapter else []
                 return ", ".join(flags) if flags else "-"
             elif col_name == "review_status":
-                value = self._adapter.get_value(product, "review_status") if self._adapter else product.get("review_status", "-")
+                value = (
+                    self._adapter.get_value(product, "review_status")
+                    if self._adapter
+                    else product.get("review_status", "-")
+                )
                 return value if value else "-"
 
         elif role == Qt.ItemDataRole.BackgroundRole:
-            color_hex = self._adapter.get_row_background_color(product) if self._adapter else None
+            color_hex = (
+                self._adapter.get_row_background_color(product)
+                if self._adapter
+                else None
+            )
             return QColor(color_hex) if color_hex else None
 
         elif role == Qt.ItemDataRole.TextAlignmentRole:
-            if col_name in ["catalog_score", "machine_score", "commerce_score", "overall_score"]:
+            if col_name in [
+                "catalog_score",
+                "machine_score",
+                "commerce_score",
+                "overall_score",
+            ]:
                 return Qt.AlignmentFlag.AlignCenter
 
         return None
@@ -151,6 +187,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
         self._filter_canonical_mismatch = False
         self._filter_shortlist_only = False
         self._show_non_product = True
+        self._filter_fetch_error = False
         self._search_text = ""
         self._category = ""
 
@@ -158,10 +195,20 @@ class ResultsFilterModel(QSortFilterProxyModel):
         """Set the adapter instance for filtering."""
         self._adapter = adapter
 
-    def set_filters(self, min_score=0, max_score=100, missing_schema=False,
-                    missing_price=False, noindex=False, canonical_mismatch=False,
-                    shortlist_only=False, show_non_product=True, search_text="",
-                    category=""):
+    def set_filters(
+        self,
+        min_score=0,
+        max_score=100,
+        missing_schema=False,
+        missing_price=False,
+        noindex=False,
+        canonical_mismatch=False,
+        shortlist_only=False,
+        show_non_product=True,
+        fetch_error=False,
+        search_text="",
+        category="",
+    ):
         """Set filter parameters."""
         self._min_score = min_score
         self._max_score = max_score
@@ -171,6 +218,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
         self._filter_canonical_mismatch = canonical_mismatch
         self._filter_shortlist_only = shortlist_only
         self._show_non_product = show_non_product
+        self._filter_fetch_error = fetch_error
         self._search_text = search_text.lower()
         self._category = category
         self.invalidateFilter()
@@ -188,41 +236,61 @@ class ResultsFilterModel(QSortFilterProxyModel):
     def _filter_with_adapter(self, product: dict) -> bool:
         """Filter using adapter methods."""
         # Score filter
-        overall = self._adapter.get_value(product, 'overall_score', 0)
+        overall = self._adapter.get_value(product, "overall_score", 0)
         if overall is None:
             overall = 0
         if overall < self._min_score or overall > self._max_score:
             return False
 
         # Missing schema filter
-        if self._filter_missing_schema and self._adapter.get_value(product, 'schema_product_present', False):
+        if self._filter_missing_schema and self._adapter.get_value(
+            product, "schema_product_present", False
+        ):
             return False
 
         # Missing price filter
         if self._filter_missing_price:
-            has_price = self._adapter.get_value(product, 'html_price_text') or self._adapter.get_value(product, 'schema_price')
+            has_price = self._adapter.get_value(
+                product, "html_price_text"
+            ) or self._adapter.get_value(product, "schema_price")
             if has_price:
                 return False
 
         # Noindex filter
-        if self._filter_noindex and not self._adapter.get_value(product, 'flag_noindex', False):
+        if self._filter_noindex and not self._adapter.get_value(
+            product, "flag_noindex", False
+        ):
             return False
 
         # Canonical issues filter
-        if self._filter_canonical_mismatch and not self._adapter.get_value(product, 'flag_canonical_mismatch', False):
+        if self._filter_canonical_mismatch and not self._adapter.get_value(
+            product, "flag_canonical_mismatch", False
+        ):
             return False
 
         # Shortlist only filter
-        if self._filter_shortlist_only and not self._adapter.get_value(product, 'candidate', False):
+        if self._filter_shortlist_only and not self._adapter.get_value(
+            product, "candidate", False
+        ):
             return False
 
         # Non-product filter
-        if not self._show_non_product and not self._adapter.get_value(product, 'is_likely_product_page', True):
+        if not self._show_non_product and not self._adapter.get_value(
+            product, "is_likely_product_page", True
+        ):
             return False
+
+        # Fetch error filter
+        if self._filter_fetch_error:
+            has_error = self._adapter.get_value(
+                product, "fetch_error"
+            ) or self._adapter.get_value(product, "flag_fetch_error", False)
+            if not has_error:
+                return False
 
         # Category filter
         if self._category:
-            breadcrumb = self._adapter.get_value(product, 'breadcrumb_text', '')
+            breadcrumb = self._adapter.get_value(product, "breadcrumb_text", "")
             if self._category not in str(breadcrumb):
                 return False
 
@@ -232,7 +300,7 @@ class ResultsFilterModel(QSortFilterProxyModel):
                 str(self._adapter.get_value(product, "url", "")),
                 str(self._adapter.get_value(product, "title", "")),
                 str(self._adapter.get_value(product, "schema_sku", "")),
-                str(self._adapter.get_value(product, "schema_gtin", ""))
+                str(self._adapter.get_value(product, "schema_gtin", "")),
             ]
             if not any(self._search_text in f.lower() for f in search_fields):
                 return False
@@ -242,8 +310,9 @@ class ResultsFilterModel(QSortFilterProxyModel):
 
 class _ReportWorker(QThread):
     """Pozadinski thread za generisanje Word izvještaja — ne blokira GUI."""
-    finished = pyqtSignal(str)   # report_path
-    failed   = pyqtSignal(str)   # error message
+
+    finished = pyqtSignal(str)  # report_path
+    failed = pyqtSignal(str)  # error message
 
     def __init__(self, output_dir: str):
         super().__init__()
@@ -252,6 +321,7 @@ class _ReportWorker(QThread):
     def run(self):
         try:
             from audit.report_generator import generate_report
+
             path = generate_report(self.output_dir)
             self.finished.emit(path)
         except Exception as e:
@@ -391,10 +461,16 @@ class ResultsTab(QWidget):
         self.shortlist_cb.stateChanged.connect(self._on_filter_changed)
         row2.addWidget(self.shortlist_cb)
 
-        self.show_non_product_cb = QCheckBox("Prikaži ne-proizvode")  # "Show Non-Product"
+        self.show_non_product_cb = QCheckBox(
+            "Prikaži ne-proizvode"
+        )  # "Show Non-Product"
         self.show_non_product_cb.setChecked(True)
         self.show_non_product_cb.stateChanged.connect(self._on_filter_changed)
         row2.addWidget(self.show_non_product_cb)
+
+        self.fetch_error_cb = QCheckBox("Greške pri preuzimanju")  # "Fetch Errors"
+        self.fetch_error_cb.stateChanged.connect(self._on_filter_changed)
+        row2.addWidget(self.fetch_error_cb)
 
         row2.addStretch()
         main_layout.addLayout(row2)
@@ -415,7 +491,9 @@ class ResultsTab(QWidget):
         self.table_view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table_view.setAlternatingRowColors(True)
         self.table_view.horizontalHeader().setStretchLastSection(True)
-        self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table_view.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive
+        )
         self.table_view.clicked.connect(self._on_row_clicked)
 
         # Model
@@ -459,7 +537,9 @@ class ResultsTab(QWidget):
         page_group = QGroupBox("Informacije o stranici")  # "Page Info"
         page_layout = QFormLayout(page_group)
         self.detail_url = QLabel("-")
-        self.detail_url.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        self.detail_url.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction
+        )
         self.detail_title = QLabel("-")
         self.detail_h1 = QLabel("-")
         self.detail_canonical = QLabel("-")
@@ -504,7 +584,9 @@ class ResultsTab(QWidget):
         signals_layout.addRow("Dostava:", self.detail_shipping)  # "Shipping:"
         signals_layout.addRow("Povrati:", self.detail_returns)  # "Returns:"
         signals_layout.addRow("Slike:", self.detail_images)  # "Images:"
-        signals_layout.addRow("Dužina teksta:", self.detail_text_length)  # "Text Length:"
+        signals_layout.addRow(
+            "Dužina teksta:", self.detail_text_length
+        )  # "Text Length:"
         layout.addWidget(signals_group)
 
         # Flags section
@@ -530,7 +612,9 @@ class ResultsTab(QWidget):
         self.open_page_btn.setEnabled(False)
         self.open_page_btn.clicked.connect(self._on_open_page)
 
-        self.mark_review_btn = QPushButton("Označi za ručnu reviziju")  # "Mark for Manual Review"
+        self.mark_review_btn = QPushButton(
+            "Označi za ručnu reviziju"
+        )  # "Mark for Manual Review"
         self.mark_review_btn.setEnabled(False)
         self.mark_review_btn.clicked.connect(self._on_mark_review)
 
@@ -541,7 +625,9 @@ class ResultsTab(QWidget):
         self.report_btn = QPushButton("Generiši izvještaj")  # "Generate Report"
         self.report_btn.setObjectName("primary")
         self.report_btn.setEnabled(False)
-        self.report_btn.setToolTip("Generiše Word (.docx) izvještaj iz trenutnih rezultata")
+        self.report_btn.setToolTip(
+            "Generiše Word (.docx) izvještaj iz trenutnih rezultata"
+        )
         self.report_btn.clicked.connect(self._on_generate_report)
 
         layout.addWidget(self.open_page_btn)
@@ -600,14 +686,14 @@ class ResultsTab(QWidget):
     def _on_results_loaded(self):
         """Handle results loaded signal."""
         df = self.results_controller.get_filtered_data()
-        
+
         # Create adapter from DataFrame
         self._adapter = ResultsAdapter(df)
-        
+
         # Set adapter on models
         self.table_model.set_adapter(self._adapter)
         self.filter_model.set_adapter(self._adapter)
-        
+
         # Update table with data through adapter
         self.table_model.update_data(self._adapter.to_dict_list())
         self._update_count(len(df))
@@ -634,8 +720,9 @@ class ResultsTab(QWidget):
             canonical_mismatch=self.canonical_cb.isChecked(),
             shortlist_only=self.shortlist_cb.isChecked(),
             show_non_product=self.show_non_product_cb.isChecked(),
+            fetch_error=self.fetch_error_cb.isChecked(),
             search_text=self.search_input.text(),
-            category=self.category_combo.currentData()
+            category=self.category_combo.currentData(),
         )
 
     def _on_search_changed(self, text: str):
@@ -645,7 +732,7 @@ class ResultsTab(QWidget):
     def _on_filter_refresh(self):
         """Handle filter refresh from controller."""
         df = self.results_controller.get_filtered_data()
-        self.table_model.update_data(df.to_dict('records'))
+        self.table_model.update_data(df.to_dict("records"))
         self._update_count(len(df))
 
     def _on_reset_filters(self):
@@ -659,6 +746,7 @@ class ResultsTab(QWidget):
         self.canonical_cb.setChecked(False)
         self.shortlist_cb.setChecked(False)
         self.show_non_product_cb.setChecked(True)
+        self.fetch_error_cb.setChecked(False)
         self.search_input.clear()
         self._on_filter_changed()
 
@@ -687,25 +775,57 @@ class ResultsTab(QWidget):
         self.detail_url.setText(f'<a href="{url}">{url}</a>')
         self.detail_title.setText(self._adapter.get_formatted_value(product, "title"))
         self.detail_h1.setText(self._adapter.get_formatted_value(product, "h1"))
-        self.detail_canonical.setText(self._adapter.get_formatted_value(product, "canonical"))
-        self.detail_robots.setText(self._adapter.get_formatted_value(product, "robots_meta"))
+        self.detail_canonical.setText(
+            self._adapter.get_formatted_value(product, "canonical")
+        )
+        self.detail_robots.setText(
+            self._adapter.get_formatted_value(product, "robots_meta")
+        )
 
         # Schema
-        self.detail_schema_product.setText(self._yes_no(self._adapter.get_value(product, "schema_product_present")))
-        self.detail_schema_offer.setText(self._yes_no(self._adapter.get_value(product, "schema_offer_present")))
-        self.detail_price_schema.setText(self._adapter.get_formatted_value(product, "schema_price") or "nije pronađeno")
-        self.detail_currency.setText(self._adapter.get_formatted_value(product, "schema_currency") or "-")
-        self.detail_availability.setText(self._adapter.get_formatted_value(product, "schema_availability") or "-")
-        self.detail_sku.setText(self._adapter.get_formatted_value(product, "schema_sku") or "-")
-        self.detail_gtin.setText(self._adapter.get_formatted_value(product, "schema_gtin") or "-")
-        self.detail_brand.setText(self._adapter.get_formatted_value(product, "schema_brand") or "-")
+        self.detail_schema_product.setText(
+            self._yes_no(self._adapter.get_value(product, "schema_product_present"))
+        )
+        self.detail_schema_offer.setText(
+            self._yes_no(self._adapter.get_value(product, "schema_offer_present"))
+        )
+        self.detail_price_schema.setText(
+            self._adapter.get_formatted_value(product, "schema_price")
+            or "nije pronađeno"
+        )
+        self.detail_currency.setText(
+            self._adapter.get_formatted_value(product, "schema_currency") or "-"
+        )
+        self.detail_availability.setText(
+            self._adapter.get_formatted_value(product, "schema_availability") or "-"
+        )
+        self.detail_sku.setText(
+            self._adapter.get_formatted_value(product, "schema_sku") or "-"
+        )
+        self.detail_gtin.setText(
+            self._adapter.get_formatted_value(product, "schema_gtin") or "-"
+        )
+        self.detail_brand.setText(
+            self._adapter.get_formatted_value(product, "schema_brand") or "-"
+        )
 
         # Signals
-        self.detail_price_html.setText(self._adapter.get_formatted_value(product, "html_price_text") or "nije pronađeno")
-        self.detail_shipping.setText(self._yes_no(self._adapter.get_value(product, "shipping_signal")))
-        self.detail_returns.setText(self._yes_no(self._adapter.get_value(product, "returns_signal")))
-        self.detail_images.setText(self._adapter.get_formatted_value(product, "image_count") or "0")
-        self.detail_text_length.setText(self._adapter.get_formatted_value(product, "visible_text_length") or "0")
+        self.detail_price_html.setText(
+            self._adapter.get_formatted_value(product, "html_price_text")
+            or "nije pronađeno"
+        )
+        self.detail_shipping.setText(
+            self._yes_no(self._adapter.get_value(product, "shipping_signal"))
+        )
+        self.detail_returns.setText(
+            self._yes_no(self._adapter.get_value(product, "returns_signal"))
+        )
+        self.detail_images.setText(
+            self._adapter.get_formatted_value(product, "image_count") or "0"
+        )
+        self.detail_text_length.setText(
+            self._adapter.get_formatted_value(product, "visible_text_length") or "0"
+        )
 
         # Flags using adapter
         flags = self._adapter.get_detailed_flags_list(product)
@@ -717,6 +837,7 @@ class ResultsTab(QWidget):
             return "Ne"
         try:
             import math
+
             if isinstance(val, float) and math.isnan(val):
                 return "Ne"
         except Exception:
@@ -737,7 +858,9 @@ class ResultsTab(QWidget):
         """Export currently visible (filtered) rows to CSV."""
         row_count = self.filter_model.rowCount()
         if not row_count:
-            QMessageBox.information(self, "Izvoz", "Nema redova za izvoz.")  # "Export", "No rows to export."
+            QMessageBox.information(
+                self, "Izvoz", "Nema redova za izvoz."
+            )  # "Export", "No rows to export."
             return
 
         file_path, _ = QFileDialog.getSaveFileName(
@@ -764,7 +887,9 @@ class ResultsTab(QWidget):
                     writer.writeheader()
                     writer.writerows(rows)
             QMessageBox.information(
-                self, "Izvoz", f"Izvezeno {len(rows)} redova u:\n{file_path}"  # "Export", "Exported {n} rows to:\n{path}"
+                self,
+                "Izvoz",
+                f"Izvezeno {len(rows)} redova u:\n{file_path}",  # "Export", "Exported {n} rows to:\n{path}"
             )
         except OSError as e:
             QMessageBox.critical(self, "Greška pri izvozu", str(e))  # "Export Error"

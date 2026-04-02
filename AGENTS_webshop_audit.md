@@ -242,6 +242,46 @@ Ne smije raditi:
 - GUI status management
 - ručno tumačenje detalja stranice
 
+### `audit/run_diff.py`
+Odgovoran za:
+- poređenje dva audit run-a (old vs new)
+- URL matching putem normaliziranih URL-ova
+- score delta calculation (new_score - old_score)
+- issue detection (resolved vs new issues)
+- severity change detection (CRITICAL/HIGH/MEDIUM/LOW/NONE)
+- category summary diff (ako postoji category_summary.csv)
+- export diff rezultata u JSON/CSV format
+
+Ne smije raditi:
+- modificiranje originalnih run outputa
+- GUI logiku (samo domain diff)
+- scoring ili shortlist logiku (koristi postojeće iz scorer/shortlist)
+
+### `audit/explainability.py`
+Odgovoran za:
+- human-readable objašnjenja za reason code-ove
+- template-based explanation generation (deterministička)
+- priority ordering objašnjenja (critical → high → medium → low)
+- combined explanation (spajanje top 2 objašnjenja)
+- sample candidate detection (razlikovanje uzoraka od problema)
+
+Ne smije raditi:
+- LLM generisanje teksta
+- izmišljanje uzroka koji nisu u podacima
+- dugačka objašnjenja (max 1-2 rečenice)
+
+### `audit/evidence.py`
+Odgovoran za:
+- evidence snapshots za audit nalaze
+- dokazni paket za svaki finding (cijena, schema, indexability, content)
+- evidence extraction iz postojećih podataka (ne duplicira extraction)
+- formatted display za GUI i report
+
+Ne smije raditi:
+- screenshot crawling
+- heavy storage sistem
+- dump cijelog HTML-a
+
 ### `audit/report_generator.py`
 Odgovoran za:
 - čitanje postojećih output fajlova
@@ -346,6 +386,145 @@ To je heuristika, ne apsolutna istina.
 - Ako mijenjaš category inference, uradi to u `scorer.py` ili izdvojenom domain helperu
 - Ne uvoditi category heuristiku u GUI filterima kao drugi izvor istine
 - Ako breadcrumb ne postoji, fallback mora biti eksplicitan (`Unknown` ili druga jasno definisana vrijednost)
+
+---
+
+## 8a. Run-to-run diff feature
+
+Feature za poređenje dva audit run-a (old vs new) radi na nivou:
+- **aggregate summary**: prosječni score-ovi, critical/high counts, price/schema counts
+- **URL level**: score delta, resolved issues, new issues, severity change
+- **category level**: promjene po kategorijama (ako postoji category_summary)
+
+### Output fajlovi
+
+Diff generiše tri nova output fajla u **new run** direktoriju:
+
+```text
+run_diff_summary.json    — aggregate statistike
+run_diff_urls.csv        — URL-level diff (svi URL-ovi)
+run_diff_categories.csv  — category-level diff (ako postoji category_summary)
+```
+
+### Matching logika
+
+- **Primarni ključ**: normalizirani URL (bez tracking parametara, www, http/https razlika)
+- **Novi URL-ovi**: postoje samo u new run → status "new"
+- **Removed URL-ovi**: postoje samo u old run → status "removed"
+- **Common URL-ovi**: postoje u oba → status "unchanged"/"improved"/"degraded"
+
+### Severity inference
+
+Diff module inferiše severity iz score + flags (isti princip kao `ShortlistCandidate`):
+- **CRITICAL**: fetch_error, non_200, not_product_page
+- **HIGH**: noindex, canonical_mismatch, missing price+schema together
+- **MEDIUM**: missing price OR schema OR low_content OR js_rendered
+- **LOW**: score < 40
+- **NONE**: score >= 40, no flags
+
+### Pravila
+
+- Diff je **opciona** faza — pokreće se samo ako je `compare_with_previous` postavljen
+- Diff ne smije modificirati originalne output fajlove
+- Diff koristi canonical kolone iz scorer-a (ne uvodi nove alias-e)
+- Category diff je optional — zavisi od postojanja `category_summary.csv`
+
+---
+
+## 8b. Explainability feature — human-readable objašnjenja
+
+Feature za automatsko generisanje ljudski čitljivih objašnjenja zašto stranica ima problema.
+
+### Kako radi
+
+1. **Reason code-ovi** iz `ShortlistCandidate` se mapiraju u template objašnjenja
+2. **Template** sadrži placeholder-e za stvarne podatke (npr. `{status_code}`, `{canonical}`)
+3. **Priority ordering** osigurava da najkritičniji problemi budu prvi
+4. **Combined explanation** spaja top 2 objašnjenja u jednu rečenicu
+
+### Output
+
+Objašnjenja su dostupna u:
+- `manual_review_candidates.csv` — kolona `explanation`
+- GUI review details panel — `ReviewAdapter.get_explanation()`
+- `is_sample` flag — razlikuje uzorke od stvarnih problema
+
+### Template primjeri
+
+```
+"fetch-error": "Stranica se ne može preuzeti — HTTP zahtjev nije uspio ({fetch_error})."
+"canonical-mismatch": "Canonical URL ({canonical}) pokazuje na drugu stranicu — ova stranica možda nije glavna verzija."
+"missing-price": "HTML nema jasan signal cijene — kupci možda ne vide cijenu odmah."
+```
+
+### Pravila
+
+- Objašnjenja moraju biti **deterministička** (isti input → isti output)
+- Moraju koristiti **stvarne podatke** iz row-a
+- Ne smiju biti **preduga** (max 1-2 rečenice)
+- **Single source-of-truth** — `audit/explainability.py`
+- Sample kandidati imaju objašnjenje ali `is_sample=True`
+
+---
+
+## 8c. Evidence snapshots — dokazni paket za nalaze
+
+Feature za pružanje dokaza zašto je alat donio određeni zaključak.
+
+### Evidence fields
+
+Evidence snapshot sadrži:
+
+**HTTP/Response:**
+- `status_code` — HTTP status kod
+- `fetch_error` — greška pri preuzimanju (ako postoji)
+
+**Indexability:**
+- `canonical` — extracted canonical URL
+- `robots_meta` — robots meta tag string
+
+**Price evidence:**
+- `html_price_text` — cijena iz HTML-a
+- `schema_price` — cijena iz structured data
+- `schema_price_value` — numeric price value
+- `schema_currency` — currency code
+
+**Product identification:**
+- `schema_product_present` — da li postoji Product schema
+- `schema_offer_present` — da li postoji Offer schema
+- `schema_sku` — SKU iz structured data
+- `schema_brand` — brand iz structured data
+
+**Content:**
+- `breadcrumb_text` — breadcrumb putanja
+- `title` — page title
+- `h1` — H1 heading
+- `visible_text_length` — dužina vidljivog teksta
+
+**Classification:**
+- `is_likely_product_page` — da li je produktna stranica
+- `is_likely_js_rendered` — da li je JS renderirana
+
+### Output
+
+Evidence je dostupan u:
+- `manual_review_candidates.csv` — kolona `evidence_summary` (kratki string)
+- GUI review details panel — `ReviewAdapter.get_evidence_summary()` i `get_full_evidence()`
+- `audit/evidence.py` — `format_evidence_for_display()` za terminal/report
+
+### Evidence summary format
+
+Za CSV export, evidence_summary je string format:
+```
+HTML cijena: €99.99 | Schema cijena: nije pronađena | Product schema: ✓ | Canonical: https://...
+```
+
+### Pravila
+
+- Koristiti **postojeće extracted podatke** — ne duplicirati extraction
+- **Ne dumpovati cijeli HTML** — samo strukturirani signali
+- **Fokus na 5-10 najkorisnijih signala** — ne pretrpavati
+- Evidence mora biti **ljudski čitljiv** — ne mašinski format
 
 ---
 

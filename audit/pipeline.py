@@ -11,8 +11,17 @@ import time
 from datetime import datetime
 from typing import Callable, Optional
 
+import pandas as pd
+
 from audit import extractor, fetcher, shortlist
-from audit.exporters import export_dataframe_csv, export_errors, export_json_summary
+from audit.exporters import (
+    export_dataframe_csv,
+    export_errors,
+    export_json_summary,
+    export_run_diff_summary,
+    export_run_diff_urls,
+)
+from audit.run_diff import compare_runs, summary_to_dict, url_diffs_to_dataframe
 from audit.scorer import build_scored_dataframe, summarize_by_category, summarize_sitewide_scores
 from audit.sitemap import (
     collect_urls_from_sitemap,
@@ -38,6 +47,7 @@ def run_audit(
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
     log_callback: Optional[Callable[[str, str], None]] = None,
     stop_event: Optional[threading.Event] = None,
+    compare_with_previous: Optional[str] = None,
 ) -> dict:
     """
     Pokreće cijeli audit pipeline.
@@ -50,13 +60,18 @@ def run_audit(
             - output_dir (str): izlazni direktorijum
             - max_urls (int): maksimalan broj URL-ova
             - delay (float): kašnjenje između zahtjeva
-        
+
         progress_callback: Funkcija za reportiranje progressa.
             Signature: (processed: int, total: int, phase: str)
-        
+
         log_callback: Funkcija za log poruke.
             Signature: (level: str, message: str)
             level: "info" | "warning" | "error"
+        
+        stop_event: Event za zaustavljanje pipeline-a.
+        
+        compare_with_previous: Optional path to previous run's output_dir
+            for run-to-run comparison. If provided, generates diff outputs.
 
     Returns:
         Rječnik sa rezultatima:
@@ -301,6 +316,51 @@ def run_audit(
 
     export_json_summary(run_summary, os.path.join(output_dir, "run_summary.json"))
     log("info", f"Run completed in {elapsed}s")
+
+    # --- Step 11: Run-to-run comparison (optional) ---
+    if compare_with_previous and os.path.isdir(compare_with_previous):
+        log("info", f"Comparing with previous run: {compare_with_previous}")
+        report_progress(len(rows), total_urls, "diff")
+        
+        try:
+            diff_summary, url_diffs = compare_runs(compare_with_previous, output_dir)
+            
+            # Export diff summary
+            diff_dict = summary_to_dict(diff_summary)
+            export_run_diff_summary(
+                diff_dict,
+                os.path.join(output_dir, "run_diff_summary.json")
+            )
+            log("info", "Exported run_diff_summary.json")
+            
+            # Export URL-level diff
+            diff_df = url_diffs_to_dataframe(url_diffs)
+            export_run_diff_urls(
+                diff_df,
+                os.path.join(output_dir, "run_diff_urls.csv")
+            )
+            log("info", f"Exported run_diff_urls.csv — {len(url_diffs)} URLs compared")
+            
+            # Export category diff if available
+            if diff_summary.category_changes:
+                cat_diff_df = pd.DataFrame.from_dict(
+                    diff_summary.category_changes,
+                    orient="index"
+                ).reset_index().rename(columns={"index": "category"})
+                export_run_diff_categories(
+                    cat_diff_df,
+                    os.path.join(output_dir, "run_diff_categories.csv")
+                )
+                log("info", f"Exported run_diff_categories.csv — {len(diff_summary.category_changes)} categories")
+            
+            # Log summary
+            log("info", f"Diff summary: {diff_summary.improved_count} improved, "
+                       f"{diff_summary.degraded_count} degraded, "
+                       f"{diff_summary.resolved_issues_count} issues resolved, "
+                       f"{diff_summary.new_issues_count} new issues")
+            
+        except Exception as e:
+            log("warning", f"Run comparison failed: {e}")
 
     return {
         "output_dir": output_dir,

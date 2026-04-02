@@ -195,6 +195,69 @@ class ReviewAdapter:
 
         return "\n".join(reason_list)
 
+    def get_explanation(self, candidate: Dict[str, Any]) -> str:
+        """
+        Get human-readable explanation for details panel.
+
+        Args:
+            candidate: Candidate dictionary
+
+        Returns:
+            Formatted explanation string
+        """
+        explanation = candidate.get("explanation", "")
+        
+        # Handle NaN/None/empty values
+        if pd.isna(explanation) or not explanation:
+            return "-"
+        
+        return str(explanation)
+
+    def get_evidence_summary(self, candidate: Dict[str, Any]) -> str:
+        """
+        Get evidence summary for details panel.
+
+        Args:
+            candidate: Candidate dictionary
+
+        Returns:
+            Formatted evidence summary string
+        """
+        evidence_summary = candidate.get("evidence_summary", "")
+        
+        # Handle NaN/None/empty values
+        if pd.isna(evidence_summary) or not evidence_summary:
+            return "-"
+        
+        # Split by " | " and format as bullet points
+        parts = evidence_summary.split(" | ")
+        return "\n".join(f"• {part}" for part in parts)
+
+    def get_full_evidence(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get full evidence snapshot for details panel.
+
+        Args:
+            candidate: Candidate dictionary
+
+        Returns:
+            Dictionary with full evidence data
+        """
+        return candidate.get("evidence", {})
+
+    def is_sample_candidate(self, candidate: Dict[str, Any]) -> bool:
+        """
+        Check if candidate is a sample (good score) rather than a real issue.
+
+        Args:
+            candidate: Candidate dictionary
+
+        Returns:
+            True if this is a sample candidate
+        """
+        is_sample = candidate.get("is_sample", False)
+        return bool(is_sample)
+
     @staticmethod
     def get_severity_color(severity: str) -> Optional[str]:
         """

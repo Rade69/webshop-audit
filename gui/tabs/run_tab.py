@@ -4,6 +4,7 @@ Run tab for displaying audit progress.
 Responsibility: Real-time display of scan progress, statistics, logs,
 and run controls during audit execution.
 """
+
 from PyQt6.QtCore import QUrl, QTimer, pyqtSlot, Qt
 from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtWidgets import (
@@ -18,8 +19,11 @@ from PyQt6.QtWidgets import (
     QPlainTextEdit,
 )
 from PyQt6.QtGui import QDesktopServices
+import time
 
 from gui.controllers.audit_run_controller import AuditRunController
+from config import PHASE_DISPLAY_NAMES
+from config import PHASE_DISPLAY_NAMES
 
 
 class RunTab(QWidget):
@@ -124,8 +128,12 @@ class RunTab(QWidget):
 
         layout.addStretch()
 
-        self._empty_hint = QLabel("Pokrenite skeniranje iz taba Unos da biste vidjeli statistike.")
-        self._empty_hint.setStyleSheet("color: #9CA3AF; font-style: italic; font-size: 12px;")
+        self._empty_hint = QLabel(
+            "Pokrenite skeniranje iz taba Unos da biste vidjeli statistike."
+        )
+        self._empty_hint.setStyleSheet(
+            "color: #9CA3AF; font-style: italic; font-size: 12px;"
+        )
         self._empty_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._empty_hint)
 
@@ -139,7 +147,9 @@ class RunTab(QWidget):
         self.log_view = QPlainTextEdit()
         self.log_view.setObjectName("log_panel")
         self.log_view.setReadOnly(True)
-        self.log_view.setPlaceholderText("Pokretanje počinje klikom na Pokreni skeniranje.")  # "Run will start when you click Start Scan."
+        self.log_view.setPlaceholderText(
+            "Pokretanje počinje klikom na Pokreni skeniranje."
+        )  # "Run will start when you click Start Scan."
         layout.addWidget(self.log_view)
 
         return group
@@ -159,7 +169,9 @@ class RunTab(QWidget):
         self.pause_btn.setEnabled(False)
         self.pause_btn.setToolTip("Nije podržano u v1")  # "Not supported in v1"
 
-        self.open_output_btn = QPushButton("Otvori izlazni folder")  # "Open Output Folder"
+        self.open_output_btn = QPushButton(
+            "Otvori izlazni folder"
+        )  # "Open Output Folder"
         self.open_output_btn.setEnabled(False)
         self.open_output_btn.clicked.connect(self._on_open_output_clicked)
 
@@ -242,11 +254,7 @@ class RunTab(QWidget):
     def _append_log(self, message: str, level: str = "info"):
         """Append message to log with color formatting."""
         # Color mapping
-        colors = {
-            "info":    "#1A1D21",
-            "warning": "#FF8C00",
-            "error":   "#B53A3A"
-        }
+        colors = {"info": "#1A1D21", "warning": "#FF8C00", "error": "#B53A3A"}
 
         # Create text format
         format = QTextCharFormat()
@@ -271,28 +279,20 @@ class RunTab(QWidget):
 
     def _phase_display_name(self, phase: str) -> str:
         """Convert phase code to display name."""
-        phase_map = {
-            "url_collection": "Prikupljanje URL-ova",  # "URL Collection"
-            "fetch": "Preuzimanje",  # "Fetch"
-            "parse": "Parsiranje HTML-a",  # "Parse HTML"
-            "score": "Bodovanje",  # "Score"
-            "shortlist": "Kratka lista",  # "Shortlist"
-            "export": "Izvoz",  # "Export"
-            "done": "Završeno"  # "Done"
-        }
-        return phase_map.get(phase, phase)
+        return PHASE_DISPLAY_NAMES.get(phase, phase)
 
     # Signal handlers
 
     @pyqtSlot()
     def _on_run_started(self):
         """Handle run started signal."""
-        import time
         self._start_time = time.time()
         self._stopped_early = False
         self.log_view.clear()
         self._set_running_state()
-        self._append_log("[INFO] Pokretanje skeniranja...", "info")  # "[INFO] Starting scan..."
+        self._append_log(
+            "[INFO] Pokretanje skeniranja...", "info"
+        )  # "[INFO] Starting scan..."
 
         # Start elapsed time timer
         self._elapsed_timer = QTimer(self)
@@ -327,11 +327,9 @@ class RunTab(QWidget):
     @pyqtSlot(str, str)
     def _on_log_message(self, level: str, message: str):
         """Handle log message signal."""
-        prefix = {
-            "info": "[INFO]",
-            "warning": "[WARN]",
-            "error": "[ERROR]"
-        }.get(level, "[INFO]")
+        prefix = {"info": "[INFO]", "warning": "[WARN]", "error": "[ERROR]"}.get(
+            level, "[INFO]"
+        )
 
         self._append_log(f"{prefix} {message}", level)
 
@@ -352,28 +350,33 @@ class RunTab(QWidget):
         """Handle run completed signal."""
         self._output_dir = output_dir
 
-        if hasattr(self, '_elapsed_timer'):
+        if hasattr(self, "_elapsed_timer"):
             self._elapsed_timer.stop()
 
         if self._stopped_early:
             self._set_stopped_state()
-            self._append_log(f"[INFO] Zaustavljeno. Parcijalni rezultati sačuvani u: {output_dir}", "info")
+            self._append_log(
+                f"[INFO] Zaustavljeno. Parcijalni rezultati sačuvani u: {output_dir}",
+                "info",
+            )
         else:
             self._set_completed_state()
-            self._append_log(f"[INFO] Skeniranje završeno. Rezultati sačuvani u: {output_dir}", "info")
+            self._append_log(
+                f"[INFO] Skeniranje završeno. Rezultati sačuvani u: {output_dir}",
+                "info",
+            )
 
     @pyqtSlot(str)
     def _on_run_failed(self, error: str):
         """Handle run failed signal."""
         # Stop elapsed timer
-        if hasattr(self, '_elapsed_timer'):
+        if hasattr(self, "_elapsed_timer"):
             self._elapsed_timer.stop()
 
         self._set_failed_state(error)
 
     def _update_elapsed(self):
         """Update elapsed time display."""
-        import time
         if self._start_time > 0:
             elapsed_sec = int(time.time() - self._start_time)
             minutes = elapsed_sec // 60
@@ -382,7 +385,9 @@ class RunTab(QWidget):
 
     def _on_stop_clicked(self):
         """Handle stop button click."""
-        self._append_log("[INFO] Zaustavljam skeniranje...", "info")  # "[INFO] Stopping scan..."
+        self._append_log(
+            "[INFO] Zaustavljam skeniranje...", "info"
+        )  # "[INFO] Stopping scan..."
         self.audit_controller.stop_run()
         # UI will update via run_completed signal
 

@@ -75,7 +75,7 @@ def fetch_page(
                 # Rate limited — exponential backoff, longer than normal
                 result["error"] = "HTTP 429 (rate limited)"
                 if attempt < DEFAULT_MAX_RETRIES:
-                    time.sleep(2 ** attempt * 3)
+                    time.sleep(2**attempt * 3)
                 continue
 
             else:
@@ -89,7 +89,7 @@ def fetch_page(
         except requests.exceptions.ConnectionError as e:
             result["error"] = f"ConnectionError: {e}"
         except Exception as e:
-            result["error"] = f"UnexpectedError: {e}"
+            result["error"] = f"UnexpectedError: {type(e).__name__}: {e}"
 
         if attempt < DEFAULT_MAX_RETRIES:
             time.sleep(1.5 * attempt)
@@ -145,7 +145,7 @@ def _fetch_page_playwright(url: str, timeout: int = DEFAULT_TIMEOUT) -> dict:
             "Run: pip install playwright && playwright install chromium"
         )
     except Exception as e:
-        result["error"] = f"PlaywrightError: {e}"
+        result["error"] = f"PlaywrightError: {type(e).__name__}: {e}"
 
     return result
 
