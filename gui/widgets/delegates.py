@@ -119,7 +119,8 @@ class StatusDelegate(QStyledItemDelegate):
         font.setBold(True)
         font.setPointSize(9)
         painter.setFont(font)
-        painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, label)
+        # Fix: Use int for alignment flag, not AlignmentFlag enum
+        painter.drawText(badge_rect, int(Qt.AlignmentFlag.AlignCenter), label)
 
         painter.restore()
 
