@@ -258,6 +258,49 @@ class ReviewAdapter:
         is_sample = candidate.get("is_sample", False)
         return bool(is_sample)
 
+    def get_fix_impact(self, candidate: Dict[str, Any]) -> str:
+        """
+        Get fix impact level for candidate.
+
+        Args:
+            candidate: Candidate dictionary
+
+        Returns:
+            Formatted impact string (HIGH/MEDIUM/LOW)
+        """
+        impact = candidate.get("fix_impact", "")
+        
+        # Handle NaN/None/empty values
+        if pd.isna(impact) or not impact:
+            return "-"
+        
+        # Map to Serbian
+        impact_map = {
+            "HIGH": "VISOK",
+            "MEDIUM": "SREDNJI",
+            "LOW": "NIZAK",
+        }
+        return impact_map.get(impact, impact)
+
+    def get_impact_color(self, candidate: Dict[str, Any]) -> Optional[str]:
+        """
+        Get color for impact level.
+
+        Args:
+            candidate: Candidate dictionary
+
+        Returns:
+            Color hex string or None
+        """
+        impact = candidate.get("fix_impact", "")
+        
+        colors = {
+            "HIGH": "#ffebee",  # Light red
+            "MEDIUM": "#fff3cd",  # Light orange
+            "LOW": "#e8f5e9",  # Light green
+        }
+        return colors.get(impact)
+
     @staticmethod
     def get_severity_color(severity: str) -> Optional[str]:
         """

@@ -9,6 +9,8 @@ future changes to the data model.
 from typing import Dict, Any, List, Optional, Union
 import pandas as pd
 
+from audit.issue_grouping import get_issue_filter_presets, get_issue_display_name
+
 
 class ResultsAdapter:
     """
@@ -343,3 +345,78 @@ class ResultsAdapter:
             df = df[mask]
         
         return df
+
+    def get_issue_filter_presets(self) -> Dict[str, str]:
+        """
+        Get filter presets for issue-centric view.
+
+        Returns:
+            Dictionary {preset_name: flag_column}
+        """
+        return get_issue_filter_presets()
+
+    def filter_by_issue(self, issue_id: str) -> pd.DataFrame:
+        """
+        Filter data to show only URLs with a specific issue.
+
+        Args:
+            issue_id: Issue identifier (e.g., "missing_price", "noindex")
+
+        Returns:
+            Filtered DataFrame
+        """
+        from audit.issue_grouping import ISSUE_DEFINITIONS
+        
+        issue_def = next((i for i in ISSUE_DEFINITIONS if i["issue_id"] == issue_id), None)
+        if not issue_def:
+            return self._data.copy()
+        
+        flag_col = issue_def["flag_column"]
+        if flag_col not in self._data.columns:
+            return self._data.copy()
+        
+        # Handle both boolean and int columns
+        if self._data[flag_col].dtype == bool:
+            return self._data[self._data[flag_col]].copy()
+        else:
+            return self._data[self._data[flag_col].astype(bool)].copy()
+
+    def get_issue_summary_stats(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get summary statistics for each issue type.
+
+        Returns:
+            Dictionary {issue_id: {count, pct_affected, avg_score}}
+        """
+        from audit.issue_grouping import ISSUE_DEFINITIONS
+        
+        stats = {}
+        total = len(self._data)
+        
+        for issue_def in ISSUE_DEFINITIONS:
+            flag_col = issue_def["flag_column"]
+            if flag_col not in self._data.columns:
+                continue
+            
+            # Count affected
+            if self._data[flag_col].dtype == bool:
+                mask = self._data[flag_col]
+            else:
+                mask = self._data[flag_col].astype(bool)
+            
+            affected = self._data[mask]
+            count = len(affected)
+            
+            if count > 0:
+                avg_score = round(affected["overall_score"].mean(), 1) if "overall_score" in affected.columns else 0.0
+            else:
+                avg_score = 0.0
+            
+            stats[issue_def["issue_id"]] = {
+                "count": count,
+                "pct_affected": round(count / total * 100, 1) if total > 0 else 0.0,
+                "avg_score": avg_score,
+                "display_name": issue_def["display_name"],
+            }
+        
+        return stats

@@ -282,6 +282,17 @@ Ne smije raditi:
 - heavy storage sistem
 - dump cijelog HTML-a
 
+### `audit/issue_grouping.py`
+Odgovoran za:
+- issue-centric grupisanje URL-ova po tipu problema
+- issue summary (count, pct_affected, avg_score)
+- issue-to-URLs mapping za CSV export
+- filter preset-e za GUI (quick filter po problemu)
+
+Ne smije raditi:
+- drugi source-of-truth za issues (koristi flag kolone iz scorer-a)
+- generički BI dashboard
+
 ### `audit/report_generator.py`
 Odgovoran za:
 - čitanje postojećih output fajlova
@@ -525,6 +536,109 @@ HTML cijena: €99.99 | Schema cijena: nije pronađena | Product schema: ✓ | C
 - **Ne dumpovati cijeli HTML** — samo strukturirani signali
 - **Fokus na 5-10 najkorisnijih signala** — ne pretrpavati
 - Evidence mora biti **ljudski čitljiv** — ne mašinski format
+
+---
+
+## 8d. Issue-centric view — rad po problemima
+
+Feature za pregled i rad po vrstama problema umjesto po URL-ovima.
+
+### Issue definicije
+
+Canonical issue definicije u `audit/issue_grouping.py`:
+
+| issue_id | display_name | flag_column | priority |
+|----------|--------------|-------------|----------|
+| fetch_error | Fetch greška | flag_fetch_error | 1 |
+| non_200 | Nije 200 OK | flag_non_200 | 1 |
+| not_product_page | Nije produktna stranica | flag_not_product_page | 1 |
+| noindex | Noindex | flag_noindex | 2 |
+| canonical_mismatch | Canonical mismatch | flag_canonical_mismatch | 2 |
+| missing_price | Nema cijene | suspicious_price_missing | 2 |
+| missing_schema | Nema Product schema | suspicious_schema_missing | 2 |
+| js_rendered | JS render | flag_js_rendered | 3 |
+| low_content | Malo sadržaja | suspicious_low_content | 3 |
+
+### Output fajlovi
+
+Issue-centric generiše dva output fajla:
+
+```text
+issue_summary.csv      — summary po issue tipu (count, avg_score, pct_affected)
+issue_to_urls.csv      — mapping issue → URL-ovi (jedan red po issue-URL paru)
+```
+
+### issue_summary.csv kolone
+
+- `issue_id` — mašinski identifikator
+- `display_name` — ljudsko ime
+- `description` — kratak opis
+- `priority` — prioritet (1 = najviši)
+- `count` — broj pogođenih URL-ova
+- `avg_score` — prosječan overall_score pogođenih
+- `pct_affected` — postotak od ukupno
+- `top_urls` — prvih 5 URL-ova (preview)
+
+### GUI integration
+
+`ResultsAdapter` pruža:
+- `get_issue_filter_presets()` — dictionary {preset_name: flag_column}
+- `filter_by_issue(issue_id)` — filter DataFrame po issue-u
+- `get_issue_summary_stats()` — statistike za svaki issue
+
+### Pravila
+
+- **Jedan source-of-truth** — koristi flag kolone iz scorer-a
+- **Ne praviti generički BI dashboard** — fokus na praktičan workflow
+- **Priority ordering** — critical issues prvi (fetch error, non-200, not-product)
+
+---
+
+## 8e. Fix impact prioritization — šta prvo popraviti
+
+Feature za prioritizaciju rada na osnovu očekivanog impact-a popravke.
+
+### Razlika: Severity vs Impact
+
+| Severity | Impact |
+|----------|--------|
+| Koliko je problem ozbiljan u audit logici | Koliko je korisno to prvo popraviti |
+| CRITICAL/HIGH/MEDIUM/LOW | HIGH/MEDIUM/LOW |
+| Koristi se za shortlist sortiranje | Koristi se za prioritizaciju popravki |
+
+### Impact mapping
+
+| Issue | Impact | Objašnjenje |
+|-------|--------|-------------|
+| fetch_error | HIGH | Stranica nije dostupna — kritično |
+| non_200 | HIGH | Stranica ne radi — kritično |
+| missing_price | HIGH | Kupci ne vide cijenu — gubitak prodaje |
+| missing_schema | HIGH | AI agenti i Google teže razumiju |
+| noindex | HIGH | Stranica nije u Google-u |
+| canonical_mismatch | HIGH | SEO signal ide na drugu stranicu |
+| not_product_page | MEDIUM | Zavisi od konteksta — možda namjerno |
+| js_rendered | MEDIUM | Neki crawleri ne vide sadržaj |
+| low_content | MEDIUM | Manje korisno za AI/kupce |
+
+### Output
+
+Impact je dostupan u:
+- `manual_review_candidates.csv` — kolone `fix_impact`, `impact_score`
+- GUI review details panel — `ReviewAdapter.get_fix_impact()`, `get_impact_color()`
+- `audit/issue_grouping.py` — `calculate_fix_impact_score(issues)`
+
+### Impact score
+
+Za stranicu sa više issue-a, impact score se računa kao:
+- **HIGH** ako ima barem jedan HIGH impact issue
+- **MEDIUM** ako ima barem jedan MEDIUM impact issue (a nema HIGH)
+- **LOW** ako ima samo LOW impact issue
+
+### Pravila
+
+- **Deterministički mapping** — isti issue → isti impact
+- **Ne miješati sa severity** — severity je za shortlist, impact je za prioritizaciju popravki
+- **Jasan source-of-truth** — `ISSUE_DEFINITIONS` u `audit/issue_grouping.py`
 
 ---
 

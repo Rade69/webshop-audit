@@ -17,12 +17,15 @@ from audit import extractor, fetcher, shortlist
 from audit.exporters import (
     export_dataframe_csv,
     export_errors,
+    export_issue_summary,
+    export_issue_to_urls,
     export_json_summary,
     export_run_diff_summary,
     export_run_diff_urls,
 )
 from audit.run_diff import compare_runs, summary_to_dict, url_diffs_to_dataframe
 from audit.scorer import build_scored_dataframe, summarize_by_category, summarize_sitewide_scores
+from audit.issue_grouping import create_issue_summary, create_issue_to_urls_mapping
 from audit.sitemap import (
     collect_urls_from_sitemap,
     discover_sitemap_urls,
@@ -287,6 +290,16 @@ def run_audit(
     if cat_summary is not None and not cat_summary.empty:
         export_dataframe_csv(cat_summary, os.path.join(output_dir, "category_summary.csv"))
         log("info", f"Exported category_summary.csv — {len(cat_summary)} categories")
+
+    # --- Step 8b: Issue-centric grouping ---
+    log("info", "Creating issue-centric grouping...")
+    issue_summary = create_issue_summary(df_scored)
+    export_issue_summary(issue_summary, os.path.join(output_dir, "issue_summary.csv"))
+    log("info", f"Exported issue_summary.csv — {len(issue_summary)} issue types")
+    
+    issue_to_urls = create_issue_to_urls_mapping(df_scored)
+    export_issue_to_urls(issue_to_urls, os.path.join(output_dir, "issue_to_urls.csv"))
+    log("info", f"Exported issue_to_urls.csv — {len(issue_to_urls)} URL-issue mappings")
 
     # --- Step 9: Errors ---
     export_errors(errors, os.path.join(output_dir, "errors.csv"))

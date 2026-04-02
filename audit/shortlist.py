@@ -2,6 +2,7 @@ import pandas as pd
 
 from audit.explainability import generate_top_explanations, generate_combined_explanation, is_sample_candidate
 from audit.evidence import EvidenceSnapshot, build_evidence_for_reasons
+from audit.issue_grouping import calculate_fix_impact_score
 from config import SHORTLIST_TOP_N, BEST_SAMPLE_TOP_N
 
 # Sample bucket tuning constants
@@ -67,6 +68,7 @@ class ShortlistCandidate:
         self.explanation = self._generate_explanation()
         self.is_sample = is_sample_candidate(self.reasons)
         self.evidence = self._generate_evidence()
+        self.fix_impact = self._calculate_fix_impact()
 
     def _generate_explanation(self) -> str:
         """Generate human-readable explanation for this candidate."""
@@ -76,6 +78,10 @@ class ShortlistCandidate:
         """Generate evidence snapshot for this candidate."""
         evidence = EvidenceSnapshot.from_row(self._row)
         return build_evidence_for_reasons(evidence, self.reasons)
+
+    def _calculate_fix_impact(self) -> dict:
+        """Calculate fix impact score for this candidate's issues."""
+        return calculate_fix_impact_score(self.reasons)
 
     def _calculate_severity(self) -> str:
         """Calculate severity level: CRITICAL, HIGH, MEDIUM, LOW."""
@@ -175,6 +181,8 @@ class ShortlistCandidate:
             "explanation": self.explanation,
             "is_sample": self.is_sample,
             "evidence_summary": self._get_evidence_summary(),
+            "fix_impact": self.fix_impact["primary_impact"],
+            "impact_score": self.fix_impact["impact_score"],
             "is_likely_product_page": self.is_likely_product_page,
             "is_likely_js_rendered": self.is_likely_js_rendered,
             "severity_score": self.severity_score,

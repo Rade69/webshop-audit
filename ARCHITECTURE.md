@@ -58,6 +58,10 @@ Input (sitemap / domain / URL file / pre-loaded URLs)
   ├── Step 8: Category summary  (audit/scorer.py)
   │       └── category_summary.csv  (samo ako ima breadcrumbs)
   │
+  ├── Step 8b: Issue-centric grouping  (audit/issue_grouping.py)
+  │       ├── issue_summary.csv  — summary po issue tipu
+  │       └── issue_to_urls.csv  — mapping issue → URL-ovi
+  │
   ├── Step 9: Errors  (errors.csv)
   │
   ├── Step 10: Run summary  (run_summary.json)
@@ -79,6 +83,7 @@ Input (sitemap / domain / URL file / pre-loaded URLs)
 | **Run diff** | `audit/run_diff.py` | Poređenje dva run-a, URL matching, score delta, issue detection |
 | **Explainability** | `audit/explainability.py` | Human-readable objašnjenja za reason code-ove |
 | **Evidence snapshots** | `audit/evidence.py` | Dokazni paket za audit nalaze |
+| **Issue-centric grouping** | `audit/issue_grouping.py` | Grupisanje URL-ova po tipovima problema + fix impact mapping |
 | **Shared orchestration** | `audit/pipeline.py` → `run_audit()` | Jedini entry point za CLI i GUI |
 | **Centralni config** | `config.py` | Svi tunable defaulti i pragovi |
 | **GUI adapteri** | `gui/adapters/results_adapter.py`, `gui/adapters/review_adapter.py` | Izoliraju GUI od data model promjena |
@@ -94,11 +99,12 @@ Input (sitemap / domain / URL file / pre-loaded URLs)
 - **scorer.py** — scoring, flag detekcija, category inference, summaries
 - **shortlist.py** — severity-based shortlist, sample bucket tuning, explanation + evidence generation
 - **sitemap.py** — sitemap discovery, URL collection, product-like filtering
-- **exporters.py** — CSV/JSON export helperi (+ diff export functions)
+- **exporters.py** — CSV/JSON export helperi (+ diff + issue export functions)
 - **report_generator.py** — DOCX report iz output fajlova
 - **run_diff.py** — run-to-run comparison, URL matching, score delta, issue detection
 - **explainability.py** — human-readable objašnjenja za audit nalaze
 - **evidence.py** — evidence snapshots za dokazni paket
+- **issue_grouping.py** — issue-centric grupisanje URL-ova po problemima
 - **pipeline.py** — `run_audit()` — shared orchestration (+ optional diff step)
 
 ### Entry pointovi
@@ -217,5 +223,6 @@ Input (sitemap / domain / URL file / pre-loaded URLs)
 | `test_run_diff.py` | Run-to-run diff logic, URL matching, score delta, issue detection |
 | `test_explainability.py` | Explanation generation, priority ordering, sample detection |
 | `test_evidence.py` | Evidence snapshots, finding-specific evidence, display formatting |
+| `test_issue_grouping.py` | Issue-centric grouping, count consistency, URL-issue mapping |
 
 > **255 testova** (non-GUI) — svi prolaze. GUI testovi postoje ali se ignoriraju u CI zbog headless okruženja.

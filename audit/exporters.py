@@ -65,3 +65,15 @@ def export_run_diff_categories(df: pd.DataFrame, path: str) -> None:
     """Saves run diff category DataFrame to CSV."""
     _ensure_dir(path)
     df.to_csv(path, index=False, encoding="utf-8-sig")
+
+
+def export_issue_summary(df: pd.DataFrame, path: str) -> None:
+    """Saves issue summary DataFrame to CSV."""
+    _ensure_dir(path)
+    df.to_csv(path, index=False, encoding="utf-8-sig")
+
+
+def export_issue_to_urls(df: pd.DataFrame, path: str) -> None:
+    """Saves issue-to-URLs mapping DataFrame to CSV."""
+    _ensure_dir(path)
+    df.to_csv(path, index=False, encoding="utf-8-sig")
